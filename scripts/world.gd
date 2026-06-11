@@ -528,7 +528,7 @@ func _build_hud() -> void:
 	target_frame.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	target_frame.offset_left = -190.0
 	target_frame.offset_right = 190.0
-	target_frame.offset_top = 8.0
+	target_frame.offset_top = 64.0
 	target_frame.visible = false
 	hud.add_child(target_frame)
 

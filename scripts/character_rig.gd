@@ -24,6 +24,7 @@ const LOOP_ANIMS := [
 
 var _ap: AnimationPlayer
 var _speed := 0.0
+var _move_dir := Vector2.ZERO   # direction LOCALE du déplacement (x droite, y avant)
 var _busy_until := 0.0
 var _casting := false
 var _current_loop := ""
@@ -60,8 +61,13 @@ func set_tint(_c: Color) -> void:
 	pass  # les textures du modèle restent telles quelles ; l'élément actif
 	      # est montré par l'orbe flottante et la couleur des sorts
 
-func set_locomotion(speed: float) -> void:
+# local_dir : direction du déplacement RELATIVE au regard du personnage
+# (x > 0 = droite, y > 0 = avant). Indispensable en lock-on : le corps reste
+# face à la cible pendant que les jambes strafent/reculent.
+func set_locomotion(speed: float, local_dir: Vector2 = Vector2.ZERO) -> void:
 	_speed = lerpf(_speed, speed, 0.25)
+	if local_dir.length() > 0.05:
+		_move_dir = _move_dir.lerp(local_dir.normalized(), 0.3)
 
 func set_casting(on: bool) -> void:
 	_casting = on
@@ -99,12 +105,23 @@ func _process(_delta: float) -> void:
 		return
 	if _casting:
 		_play_loop("Spellcasting")
-	elif _speed > RUN_THRESHOLD:
-		_play_loop("Running_A")
 	elif _speed > WALK_THRESHOLD:
-		_play_loop("Walking_A")
+		_play_loop(_locomotion_anim())
 	else:
 		_play_loop("Idle")
+
+# Choisit l'anim de déplacement selon la direction locale (strafe en lock-on)
+func _locomotion_anim() -> String:
+	if absf(_move_dir.x) > absf(_move_dir.y) * 1.2:
+		return "Running_Strafe_Right" if _move_dir.x > 0 else "Running_Strafe_Left"
+	if _move_dir.y < -0.3:
+		return "Walking_Backwards"
+	return "Running_A" if _speed > RUN_THRESHOLD else "Walking_A"
+
+func debug_anim() -> String:
+	if _ap == null:
+		return "no-animationplayer"
+	return "%s (speed=%.2f, busy=%s)" % [_ap.current_animation, _speed, str(_now() < _busy_until)]
 
 func _play_loop(anim_name: String) -> void:
 	if _current_loop == anim_name:

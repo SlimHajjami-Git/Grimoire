@@ -22,6 +22,11 @@ func _ready() -> void:
 				return
 			get_tree().change_scene_to_file.call_deferred("res://scenes/world.tscn")
 			return
+		if a == "--phototest":
+			# Mode dev : héberge en solo, le joueur fait des captures d'écran
+			Net.host("PhotoBot")
+			get_tree().change_scene_to_file.call_deferred("res://scenes/world.tscn")
+			return
 		if a.begins_with("--autojoin"):
 			var ip := "127.0.0.1"
 			if "=" in a:

@@ -98,6 +98,8 @@ func _ready() -> void:
 			t.autostart = true
 			t.timeout.connect(_autotest_tick)
 			add_child(t)
+		if "--phototest" in OS.get_cmdline_user_args():
+			_run_phototest()
 
 # ------------------------------------------------------------------ VISUELS
 
@@ -227,14 +229,20 @@ func _physics_process(delta: float) -> void:
 
 	_update_target_ring()
 	if model:
-		model.set_locomotion(Vector2(velocity.x, velocity.z).length())
+		# Direction locale du déplacement (le corps peut regarder ailleurs
+		# qu'il ne se déplace en lock-on → anims de strafe/marche arrière)
+		var flat := Vector3(velocity.x, 0, velocity.z)
+		var local := flat.rotated(Vector3.UP, -rotation.y)
+		model.set_locomotion(flat.length(), Vector2(local.x, -local.z))
 
 func _process(delta: float) -> void:
 	# Animation de marche des AUTRES joueurs (vitesse déduite de la position)
 	if not is_multiplayer_authority() and model:
-		var spd := (global_position - _prev_pos).length() / maxf(delta, 0.0001)
+		var delta_pos := global_position - _prev_pos
 		_prev_pos = global_position
-		model.set_locomotion(spd)
+		var spd := delta_pos.length() / maxf(delta, 0.0001)
+		var local := delta_pos.rotated(Vector3.UP, -rotation.y)
+		model.set_locomotion(spd, Vector2(local.x, -local.z))
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_multiplayer_authority():
@@ -311,6 +319,11 @@ func _lock_candidates() -> Array:
 func _validate_target() -> void:
 	if current_target != null and not _is_enemy(current_target):
 		current_target = null
+	elif current_target != null and current_target.global_position.distance_to(global_position) > LOCK_RANGE * 1.3:
+		# Comme Elden Ring : le lock casse quand la cible est trop loin —
+		# sinon le perso reste braqué sur un boss à 100 m où qu'on aille.
+		current_target = null
+		_toast("Cible perdue (trop loin)")
 	if cam_rig:
 		cam_rig.lock_target = current_target
 
@@ -582,6 +595,55 @@ func _toast(msg: String) -> void:
 	var world := get_tree().get_first_node_in_group("world")
 	if world:
 		world.show_toast(msg)
+
+# Mode dev : capture des screenshots (idle / course / arrêt) pour vérifier
+# visuellement l'orientation du modèle et les transitions d'animation.
+func _run_phototest() -> void:
+	await get_tree().create_timer(1.5).timeout
+	current_target = null
+	# 1 : caméra placée DEVANT le joueur (rotation connue) → on doit voir sa FACE
+	rotation.y = 0.0
+	if cam_rig:
+		cam_rig.lock_target = null
+		cam_rig.yaw = PI
+		cam_rig.pitch = -0.15
+		cam_rig.spring.spring_length = 3.0
+	await get_tree().create_timer(0.5).timeout
+	await _snap("photo_1_camera_devant")
+	# 2 : caméra DERRIÈRE → on doit voir son DOS et sa cape
+	if cam_rig:
+		cam_rig.yaw = 0.0
+	await get_tree().create_timer(0.5).timeout
+	await _snap("photo_2_camera_derriere")
+	# 3 : course vers l'avant — caméra dans le dos, on doit voir dos + cape
+	Input.action_press("move_up")
+	await get_tree().create_timer(1.2).timeout
+	print("[PHOTO] anim pendant course : ", model.debug_anim())
+	await _snap("photo_3_course")
+	Input.action_release("move_up")
+	# 4 : arrêt — l'animation DOIT revenir à Idle
+	await get_tree().create_timer(1.2).timeout
+	print("[PHOTO] anim après arrêt : ", model.debug_anim())
+	await _snap("photo_4_arret")
+	# 5 : scénario du bug — lock-on sur le boss + strafe gauche
+	#     → le corps reste face au boss, l'anim DOIT être Running_Strafe_Left
+	#     (31,32) = à l'intérieur du cercle de pierres, pas DANS un pilier
+	global_position = Vector3(31, 0.2, 32)
+	await get_tree().create_timer(0.5).timeout
+	_toggle_lock()
+	print("[PHOTO] cible lockée : ", current_target != null)
+	Input.action_press("move_left")
+	await get_tree().create_timer(1.2).timeout
+	print("[PHOTO] anim strafe en lock : ", model.debug_anim())
+	await _snap("photo_5_strafe_lock")
+	Input.action_release("move_left")
+	get_tree().quit()
+
+func _snap(file_name: String) -> void:
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	img.save_png("C:/Users/Mega-PC/Desktop/GRIMOIRE_ONLINE/tools/%s.png" % file_name)
+	print("[PHOTO] ", file_name)
 
 # ------------------------------------------------------------------ AUTOTEST (headless)
 
