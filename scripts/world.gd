@@ -135,9 +135,15 @@ func _on_player_registered(id: int, info: Dictionary) -> void:
 	get_tree().create_timer(1.0).timeout.connect(func():
 		if not is_inside_tree() or not Net.players.has(id):
 			return
+		var now_ms := Time.get_ticks_msec()
 		for pid in player_hp:
 			if pid != id:
-				rpc_id(id, "sync_hp", pid, player_hp[pid])
+				# silent=true : sans ça, tous les joueurs blessés jouaient
+				# une animation de "coup reçu" à l'arrivée du nouveau pair
+				rpc_id(id, "sync_hp", pid, player_hp[pid], true)
+				var buff_until: int = _buffs.get(pid, {}).get("frost_armor_until", 0)
+				if buff_until > now_ms:
+					rpc_id(id, "fx_buff", pid, float(buff_until - now_ms) / 1000.0)
 		for b in get_tree().get_nodes_in_group("boss"):
 			rpc_id(id, "sync_boss_hp", String(b.name), b.hp)
 	)
@@ -253,7 +259,7 @@ func request_spell(element: String, slot: int, target_kind: String, target_name:
 # tout ennemi dans la portée ET dans l'arc frontal du lanceur.
 # L'épée porte l'élément actif → la roue des contres s'applique aussi en mêlée.
 @rpc("any_peer", "call_local", "reliable")
-func request_melee(element: String, step: int) -> void:
+func request_melee(element: String, step: int, yaw: float) -> void:
 	if not multiplayer.is_server():
 		return
 	var sender := multiplayer.get_remote_sender_id()
@@ -266,13 +272,19 @@ func request_melee(element: String, step: int) -> void:
 		return
 	if element not in Net.players.get(sender, {}).get("unlocked", []):
 		return
+	if not is_finite(yaw):
+		return
 	var now := Time.get_ticks_msec()
 	if _melee_last.get(sender, 0) + MELEE_MIN_INTERVAL_MS > now:
 		return
 	_melee_last[sender] = now
 	rpc("fx_melee", sender, step)
 
-	var facing: Vector3 = -caster.global_transform.basis.z
+	# L'orientation vient du RPC, pas de la rotation répliquée : le snap de
+	# visée du client (lock + clic) arrive APRÈS le coup sinon — les premiers
+	# coups après un Tab rataient en silence. La rotation est déjà
+	# client-autoritaire via le synchronizer, donc zéro confiance ajoutée.
+	var facing := Vector3(-sin(yaw), 0, -cos(yaw))
 	facing.y = 0
 	facing = facing.normalized()
 	var targets: Array = []
@@ -366,7 +378,7 @@ func _hit_player(target: Node3D, base_damage: int, element: String, shooter: int
 	player_hp[id] = player_hp.get(id, 100) - dmg
 	print("[HIT] joueur %d -%d (%s x%.1f) par %d → %d PV" % [id, dmg, element, mult, shooter, player_hp[id]])
 	rpc("fx_damage_number", target.global_position + Vector3.UP * 2.2, dmg, mult)
-	rpc("sync_hp", id, player_hp[id])
+	rpc("sync_hp", id, player_hp[id], false)
 	if player_hp[id] <= 0:
 		_kill_player(id, shooter, element)
 	elif float(extra.get("slow", 0.0)) > 0.0:
@@ -381,7 +393,7 @@ func _kill_player(victim: int, killer: int, element: String) -> void:
 		rpc("toast", "⚔ %s a vaporisé %s (%s %s)" % [kname, vname, ElementData.emoji(element), ElementData.display_name(element)])
 	_invuln_until[victim] = Time.get_ticks_msec() + RESPAWN_INVULN_MS
 	player_hp[victim] = 100
-	rpc("sync_hp", victim, 100)
+	rpc("sync_hp", victim, 100, true)
 	rpc("client_respawn", victim, _spawn_pos())
 	# Dissipe les projectiles encore en vol vers la victime : sinon ils la
 	# poursuivraient jusqu'à son point de respawn à travers toute la carte.
@@ -400,10 +412,10 @@ func server_boss_melee(boss: Node3D) -> void:
 # ---------------------------------------------------------------- RPC CLIENTS
 
 @rpc("authority", "call_local", "reliable")
-func sync_hp(id: int, value: int) -> void:
+func sync_hp(id: int, value: int, silent := false) -> void:
 	var node := players_node.get_node_or_null(str(id))
 	if node:
-		node.set_hp_display(value)
+		node.set_hp_display(value, silent)
 
 @rpc("authority", "call_local", "reliable")
 func sync_boss_hp(boss_name: String, value: int) -> void:
@@ -497,6 +509,24 @@ func fx_melee(id: int, step: int) -> void:
 	var node := players_node.get_node_or_null(str(id))
 	if node:
 		node.play_melee_anim(step)
+
+# Relais d'état d'incantation : sans lui, les autres joueurs voient un mage
+# immobile en Idle pendant 2s puis un projectile sorti de nulle part — le
+# télégraphe PvP le plus important du jeu serait invisible.
+@rpc("any_peer", "call_local", "reliable")
+func request_cast_state(casting: bool, shoot: bool) -> void:
+	if not multiplayer.is_server():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender == 0:
+		sender = multiplayer.get_unique_id()
+	rpc("fx_cast", sender, casting, shoot)
+
+@rpc("authority", "call_local", "reliable")
+func fx_cast(id: int, casting: bool, shoot: bool) -> void:
+	var node := players_node.get_node_or_null(str(id))
+	if node:
+		node.play_cast_anim(casting, shoot)
 
 # ---------------------------------------------------------------- HUD
 

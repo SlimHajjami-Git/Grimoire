@@ -76,6 +76,9 @@ func register_player(pname: String) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := multiplayer.get_remote_sender_id()
+	if players.has(id):
+		return  # déjà enregistré — un doublon re-spawnerait le joueur (full
+		        # heal gratuit) et créerait un node fantôme répliqué partout
 	players[id] = _make_info(pname)
 	print("[NET] Joueur enregistré : ", pname, " (id ", id, ")")
 	player_registered.emit(id, players[id])

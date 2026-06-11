@@ -380,7 +380,9 @@ func _start_melee() -> void:
 		model.play_melee(_melee_step)
 	var world := get_tree().get_first_node_in_group("world")
 	if world:
-		world.rpc_id(1, "request_melee", sync_element, _melee_step)
+		# Le yaw part avec le RPC : la rotation répliquée arrive trop tard
+		# après un snap de visée (lock + clic) → coups fantômes sinon
+		world.rpc_id(1, "request_melee", sync_element, _melee_step, rotation.y)
 
 # Vue distante d'une attaque (diffusée par le serveur via fx_melee)
 func play_melee_anim(step: int) -> void:
@@ -436,12 +438,14 @@ func _try_cast_spell(slot: int) -> void:
 		_gcd_until = now + GCD
 		if model:
 			model.set_casting(true)
+		_notify_cast_state(true, false)
 
 func _complete_cast() -> void:
 	_casting = false
 	if model:
 		model.set_casting(false)
 		model.play_cast_shoot()
+	_notify_cast_state(false, true)
 	_send_cast(_cast_slot, _cast_spell, _cast_target)
 	_cast_target = null
 
@@ -450,9 +454,27 @@ func _cancel_cast(msg: String) -> void:
 	_cast_target = null
 	if model:
 		model.set_casting(false)
+	_notify_cast_state(false, false)
 	# Le GCD armé au début du cast est remboursé : aucun sort n'est parti
 	_gcd_until = 0.0
 	_toast(msg)
+
+# Prévient le serveur (qui rediffuse) qu'une incantation commence/finit :
+# c'est ce qui rend le wind-up visible par les AUTRES joueurs — le
+# télégraphe PvP central du jeu.
+func _notify_cast_state(casting: bool, shoot: bool) -> void:
+	var world := get_tree().get_first_node_in_group("world")
+	if world:
+		world.rpc_id(1, "request_cast_state", casting, shoot)
+
+# Vue distante d'une incantation (diffusée par le serveur via fx_cast)
+func play_cast_anim(casting: bool, shoot: bool) -> void:
+	if is_multiplayer_authority():
+		return  # déjà jouée localement
+	if model:
+		model.set_casting(casting)
+		if shoot:
+			model.play_cast_shoot()
 
 func _send_cast(slot: int, spell: Dictionary, snapshot_target: Node3D = null) -> void:
 	var t := snapshot_target if snapshot_target != null else current_target
@@ -489,6 +511,7 @@ func on_respawned() -> void:
 	_slow_until = 0.0
 	if model:
 		model.set_casting(false)
+	_notify_cast_state(false, false)
 
 # Appelé via world.gd quand le serveur accorde une nouvelle magie (boss PvE)
 func grant_element(element: String) -> void:
@@ -527,9 +550,10 @@ func show_buff_bubble(duration: float) -> void:
 			bubble.queue_free()
 	)
 
-func set_hp_display(value: int) -> void:
-	# Réaction visible aux dégâts (sur tous les pairs)
-	if value < hp and model:
+func set_hp_display(value: int, silent := false) -> void:
+	# Réaction visible aux dégâts (sur tous les pairs) — sauf pour les
+	# synchronisations "froides" (snapshot d'arrivée, reset au respawn)
+	if not silent and value < hp and model:
 		model.play_hit()
 	hp = value
 	hp_label.text = str(maxi(value, 0))

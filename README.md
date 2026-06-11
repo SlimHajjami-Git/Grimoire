@@ -126,3 +126,5 @@ Dette technique assumée pour l'instant (notée, pas oubliée) :
 - Le timing d'incantation est mesuré côté client (latence = léger avantage) → serveur en Phase 4.
 - Pas d'interpolation des positions distantes (léger stutter possible à haute latence).
 - Pas de persistance : tout reset au redémarrage du serveur.
+- Un joueur qui rejoint pendant qu'un projectile est en vol peut le voir
+  rejouer depuis son point de lancement (visuel uniquement, < 3 s).

@@ -35,6 +35,12 @@ func _ready() -> void:
 		_target = world.resolve_target_node(target_kind, target_name)
 	if multiplayer.is_server():
 		body_entered.connect(_on_body_entered)
+	elif _target == null:
+		# Réplication late-join : la cible d'origine n'existe pas (encore) sur
+		# ce pair → données de lancement périmées. On masque la copie locale ;
+		# le despawn du serveur (répliqué par le spawner) la supprimera.
+		visible = false
+		set_physics_process(false)
 
 func _build_visuals() -> void:
 	var c: Color = ElementData.get_color(element)
@@ -75,6 +81,11 @@ func _physics_process(delta: float) -> void:
 		queue_free()
 
 func _hit(node: Node3D) -> void:
+	# Garde anti double-impact : le filet de proximité ET body_entered peuvent
+	# se déclencher dans la MÊME frame physique (queue_free est différé) —
+	# sans ce garde, ~la moitié des impacts sur joueur faisaient double dégâts.
+	if is_queued_for_deletion():
+		return
 	var world := get_tree().get_first_node_in_group("world")
 	if world:
 		world.server_handle_hit(node, damage, element, shooter, extra)
