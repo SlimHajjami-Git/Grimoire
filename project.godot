@@ -1,0 +1,31 @@
+; GRIMOIRE Online — survie multijoueur, magie élémentaire, monde féérique
+; Fondation : Godot 4.4, serveur autoritaire (ENet), caméra top-down action.
+
+config_version=5
+
+[application]
+
+config/name="GRIMOIRE Online"
+config/description="Survie multijoueur magique — la magie se gagne en PvE, se défend en PvP."
+run/main_scene="res://scenes/menu.tscn"
+config/features=PackedStringArray("4.4", "Forward Plus")
+config/icon="res://icon.svg"
+
+[autoload]
+
+ElementData="*res://scripts/element_data.gd"
+SpellData="*res://scripts/spell_data.gd"
+InputSetup="*res://scripts/input_setup.gd"
+Net="*res://scripts/net.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+environment/defaults/default_clear_color=Color(0.06, 0.04, 0.1, 1)
