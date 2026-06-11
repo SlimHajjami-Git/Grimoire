@@ -31,8 +31,11 @@ le modèle serveur de **Rust** (un monde = un serveur, pas un MMO mondial).
 | Échap | Déverrouille la cible, puis libère la souris |
 | Molette | Zoom caméra |
 
-Le personnage est un **humain généré par code** (épée en main, animations de
-marche/combos procédurales) — il sera remplacé par un modèle riggé en phase art.
+Le personnage est le **Mage du pack KayKit Adventurers** (Kay Lousberg, licence
+CC0 — `assets/kaykit/LICENSE.txt`) : modèle riggé low-poly avec 75 animations
+professionnelles (marche, course, attaques, incantation, esquive, réactions aux
+coups). Chapeau de mage, cape et baguette inclus. Les 3 autres personnages du
+pack (Chevalier, Barbare, Voleur) pourront servir de classes/skins plus tard.
 
 **La mêlée** : 3 coups d'épée enchaînables au clic (le 3ᵉ est un coup à deux
 mains plus lourd). L'épée est **imprégnée de ta magie active** → la roue des
@@ -100,7 +103,8 @@ GRIMOIRE_ONLINE/
 │   ├── menu.gd              ← héberger / rejoindre / args --server --autojoin
 │   ├── world.gd             ← génération du monde + logique serveur + HUD
 │   ├── player.gd            ← mage : lock-on, combos mêlée, incantation, dash
-│   ├── human_model.gd       ← humain procédural + animations (marche, combos, cast)
+│   ├── character_rig.gd     ← modèle KayKit Mage + pilotage des 75 animations
+│   ├── human_model.gd       ← (archive) humain procédural, remplacé par KayKit
 │   ├── third_person_camera.gd ← caméra Elden Ring (orbite, SpringArm, lock-on)
 │   ├── projectile.gd        ← sort autoguidé (simulation locale, hits serveur)
 │   └── boss.gd              ← Gardien de Givre (IA serveur : mêlée + trait à distance)

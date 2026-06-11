@@ -23,7 +23,7 @@ const TURN_SPEED := 12.0
 const MELEE_DURATIONS := [0.45, 0.45, 0.65]
 const MELEE_CHAIN_WINDOW := 0.55
 
-const HumanModelScript := preload("res://scripts/human_model.gd")
+const CharacterRigScript := preload("res://scripts/character_rig.gd")
 const CameraRigScript := preload("res://scripts/third_person_camera.gd")
 
 @export var player_name := "Mage"
@@ -103,7 +103,7 @@ func _ready() -> void:
 
 func _build_visuals() -> void:
 	model = Node3D.new()
-	model.set_script(HumanModelScript)
+	model.set_script(CharacterRigScript)
 	add_child(model)
 	model.build(ElementData.get_color(sync_element))
 
@@ -116,13 +116,13 @@ func _build_visuals() -> void:
 	orb = MeshInstance3D.new()
 	orb.mesh = sph
 	orb.material_override = _orb_mat
-	orb.position = Vector3(-0.45, 1.85, 0)
+	orb.position = Vector3(-0.62, 1.55, 0)
 	add_child(orb)
 
 	orb_light = OmniLight3D.new()
 	orb_light.omni_range = 4.0
 	orb_light.light_energy = 1.1
-	orb_light.position = Vector3(-0.45, 1.85, 0)
+	orb_light.position = Vector3(-0.62, 1.55, 0)
 	add_child(orb_light)
 
 	name_label = Label3D.new()
@@ -428,6 +428,7 @@ func _complete_cast() -> void:
 	_casting = false
 	if model:
 		model.set_casting(false)
+		model.play_cast_shoot()
 	_send_cast(_cast_slot, _cast_spell, _cast_target)
 	_cast_target = null
 
@@ -514,6 +515,9 @@ func show_buff_bubble(duration: float) -> void:
 	)
 
 func set_hp_display(value: int) -> void:
+	# Réaction visible aux dégâts (sur tous les pairs)
+	if value < hp and model:
+		model.play_hit()
 	hp = value
 	hp_label.text = str(maxi(value, 0))
 	var ratio := clampf(value / 100.0, 0.0, 1.0)
@@ -554,6 +558,8 @@ func _try_dash() -> void:
 	_dash_dir = dir.normalized()
 	_dash_until = now + DASH_DURATION
 	_dash_cd_until = now + DASH_COOLDOWN
+	if model:
+		model.play_dash()
 
 func _face_node(t: Node3D) -> void:
 	if not _is_enemy(t):
