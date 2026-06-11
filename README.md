@@ -1,13 +1,13 @@
-# GRIMOIRE ONLINE — Fondation v0.2 (combat tab-target)
+# GRIMOIRE ONLINE — v0.3 (Sprint 1 : combat Elden Ring)
 
 Jeu de **survie multijoueur magique** : monde féérique, sorts élémentaires avec
 roue des contres, et le pilier du jeu — **la magie se gagne en PvE** (tuer des
 boss débloque de nouvelles magies), puis se défend en PvP.
 
 Références : la formule de **V Rising** (survie + pouvoirs débloqués par boss +
-sièges de clans), le combat ciblé sorts/cooldowns de **WoW**, l'univers magique
-de **Fairy Tail**, le modèle serveur de **Rust** (un monde = un serveur, pas un
-MMO mondial).
+sièges de clans), le combat et la caméra d'**Elden Ring** (vue de dos, lock-on,
+combos), les sorts/cooldowns de **WoW**, l'univers magique de **Fairy Tail**,
+le modèle serveur de **Rust** (un monde = un serveur, pas un MMO mondial).
 
 ## Jouer (zéro installation — Godot est inclus dans `tools/`)
 
@@ -17,20 +17,31 @@ MMO mondial).
 | `EDITEUR.bat` | Ouvre le projet dans l'éditeur Godot |
 | `SERVEUR_DEDIE.bat` | Serveur headless port 7777 (pour jouer avec des amis : partage ton IP + ouvre le port) |
 
-## Contrôles (type WoW)
+## Contrôles (type Elden Ring)
 
 | Touche | Action |
 |---|---|
-| ZQSD / WASD | Déplacement |
-| Clic gauche | **Sélectionner une cible** (clic dans le vide = désélection) |
-| Tab | Cibler l'ennemi proche suivant |
-| 1 / 2 / 3 | Lancer les sorts de la magie active |
+| ZQSD / WASD | Déplacement (relatif à la caméra) |
+| Souris | Caméra 3ᵉ personne, vue de dos (orbite libre) |
+| **Clic gauche** | **Coup d'épée — re-cliquer enchaîne les combos (1→2→3)** |
+| Tab / clic-molette | **Lock-on** : verrouille la cible (re-Tab : cible suivante) |
+| 1 / 2 / 3 | Sorts de la magie active (sur la cible verrouillée) |
 | R | Changer de magie (parmi celles débloquées) |
 | Espace | Dash |
-| Échap | Annuler la cible |
+| Échap | Déverrouille la cible, puis libère la souris |
 | Molette | Zoom caméra |
 
-⚠ Comme dans WoW : **bouger pendant une incantation l'interrompt.**
+Le personnage est un **humain généré par code** (épée en main, animations de
+marche/combos procédurales) — il sera remplacé par un modèle riggé en phase art.
+
+**La mêlée** : 3 coups d'épée enchaînables au clic (le 3ᵉ est un coup à deux
+mains plus lourd). L'épée est **imprégnée de ta magie active** → la roue des
+contres s'applique aussi en mêlée (épée enflammée ×1.5 contre le boss de glace).
+La caméra ne traverse jamais le décor (SpringArm), et en lock-on tu strafes
+autour de ta cible comme dans Elden Ring.
+
+⚠ Les sorts se canalisent immobile : **bouger pendant une incantation
+l'interrompt** (la mêlée, elle, reste mobile).
 
 ## Les sorts actuels
 
@@ -88,7 +99,9 @@ GRIMOIRE_ONLINE/
 │   ├── net.gd               ← AUTOLOAD : connexion ENet + registre joueurs
 │   ├── menu.gd              ← héberger / rejoindre / args --server --autojoin
 │   ├── world.gd             ← génération du monde + logique serveur + HUD
-│   ├── player.gd            ← mage : ciblage, incantation, dash, caméra
+│   ├── player.gd            ← mage : lock-on, combos mêlée, incantation, dash
+│   ├── human_model.gd       ← humain procédural + animations (marche, combos, cast)
+│   ├── third_person_camera.gd ← caméra Elden Ring (orbite, SpringArm, lock-on)
 │   ├── projectile.gd        ← sort autoguidé (simulation locale, hits serveur)
 │   └── boss.gd              ← Gardien de Givre (IA serveur : mêlée + trait à distance)
 └── tools/                   ← Godot 4.4.1 portable (gitignored)
@@ -96,8 +109,9 @@ GRIMOIRE_ONLINE/
 
 ## Roadmap (phases honnêtes)
 
-- **Phase 0 — FAIT** : fondation réseau, combat tab-target type WoW (cible, sorts
-  1-3, incantation, GCD), boss PvE → déblocage de magie, PvP.
+- **Phase 0 — FAIT** : fondation réseau, boss PvE → déblocage de magie, PvP.
+- **Sprint 1 — FAIT** : personnage humain, caméra Elden Ring (vue de dos +
+  lock-on), combos d'épée au clic, sorts 1-3 sur cible verrouillée.
 - **Phase 1 — Survie** : récolte (arbres/pierre), craft, inventaire, jour/nuit, sauvegarde serveur (persistance).
 - **Phase 2 — Construction** : poser murs/portes/coffres, destruction par sorts → les **raids de bases**.
 - **Phase 3 — Social** : guildes, sièges GvG, donjons d'élite (magies rares : Ombre, Temps, Sang…), Lost Magic.

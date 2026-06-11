@@ -1,23 +1,30 @@
 extends CharacterBody3D
-# Le mage — combat type WoW :
-#   clic gauche  = sélectionner une cible (clic dans le vide = désélection)
-#   Tab          = cycler les cibles proches
-#   1 / 2 / 3    = lancer les sorts de la magie active
-#   R            = changer de magie (parmi celles débloquées)
-#   Espace       = dash  •  Échap = annuler la cible
-# Bouger pendant une incantation l'INTERROMPT (comme WoW).
+# Le mage — contrôles type Elden Ring :
+#   Souris            = caméra libre (3e personne, vue de dos)
+#   Clic gauche       = coup d'épée — re-cliquer enchaîne les combos (1→2→3)
+#   Tab / clic-molette = verrouiller la cible (re-Tab : cible suivante)
+#   1 / 2 / 3         = sorts de la magie active (sur la cible verrouillée)
+#   R                 = changer de magie  •  Espace = dash
+#   Échap             = déverrouiller la cible, puis libérer la souris
+# Bouger pendant une incantation l'interrompt (les sorts se canalisent
+# immobile ; la mêlée, elle, reste mobile). L'épée porte ton élément actif.
 # Autorité : le peer propriétaire. PV et dégâts gérés côté serveur (world.gd).
 
 const SPEED := 6.5
+const MELEE_MOVE_FACTOR := 0.25   # on avance peu pendant un coup d'épée
 const DASH_SPEED := 16.0
 const DASH_DURATION := 0.16
 const DASH_COOLDOWN := 1.1
 const GRAVITY := 22.0
-const GCD := 0.8                 # global cooldown entre deux sorts
-const TARGET_MAX_RANGE := 60.0   # portée max de sélection de cible
+const GCD := 0.8
+const LOCK_RANGE := 35.0
+const TURN_SPEED := 12.0
 
-const CAM_YAW := PI * 0.25       # 45° — vue type V Rising / WoW dézoomé
-const CAM_PITCH := 0.96          # ~55°
+const MELEE_DURATIONS := [0.45, 0.45, 0.65]
+const MELEE_CHAIN_WINDOW := 0.55
+
+const HumanModelScript := preload("res://scripts/human_model.gd")
+const CameraRigScript := preload("res://scripts/third_person_camera.gd")
 
 @export var player_name := "Mage"
 @export var sync_element: String = "fire":
@@ -28,38 +35,42 @@ const CAM_PITCH := 0.96          # ~55°
 
 var unlocked: Array = ["fire"]
 var hp := 100
-var current_target: Node3D = null
+var current_target: Node3D = null   # cible verrouillée (lock-on)
 
 var _dash_until := 0.0
 var _dash_cd_until := 0.0
 var _dash_dir := Vector3.ZERO
-var _cam_dist := 14.0
 
 # État d'incantation
 var _casting := false
 var _cast_slot := -1
 var _cast_spell: Dictionary = {}
-var _cast_target: Node3D = null   # cible FIGÉE au début de l'incantation (comme WoW)
+var _cast_target: Node3D = null   # cible FIGÉE au début de l'incantation
 var _cast_started := 0.0
 var _cast_until := 0.0
 var _cds := {}            # spell_id -> fin de cooldown (secondes)
 var _gcd_until := 0.0
 
+# État mêlée (combos)
+var _melee_step := 0
+var _melee_until := 0.0
+var _melee_chain_until := 0.0
+var _melee_queued := false
+
 # Ralentissement (appliqué par le serveur via world.client_apply_slow)
 var _slow_factor := 0.0
 var _slow_until := 0.0
 
-var _want_pick := false
 var _autotest_count := 0
+var _prev_pos := Vector3.ZERO
 
-var camera: Camera3D
-var body_mesh: MeshInstance3D
+var model: Node3D
+var cam_rig: Node3D
 var orb: MeshInstance3D
 var orb_light: OmniLight3D
 var name_label: Label3D
 var hp_label: Label3D
 var target_ring: MeshInstance3D
-var _body_mat: StandardMaterial3D
 var _orb_mat: StandardMaterial3D
 
 func _now() -> float:
@@ -73,14 +84,14 @@ func _ready() -> void:
 	add_to_group("players")
 	_build_visuals()
 	_apply_element_visual()
+	_prev_pos = global_position
 	if is_multiplayer_authority():
-		camera = Camera3D.new()
-		camera.name = "Cam"
-		camera.top_level = true
-		add_child(camera)
-		camera.current = true
-		_update_camera()
+		cam_rig = Node3D.new()
+		cam_rig.set_script(CameraRigScript)
+		add_child(cam_rig)
+		cam_rig.setup(self)
 		_build_target_ring()
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		if "--autotest" in OS.get_cmdline_user_args():
 			var t := Timer.new()
 			t.wait_time = 2.0
@@ -91,32 +102,27 @@ func _ready() -> void:
 # ------------------------------------------------------------------ VISUELS
 
 func _build_visuals() -> void:
-	_body_mat = StandardMaterial3D.new()
-	_body_mat.roughness = 0.8
-	var cap := CapsuleMesh.new()
-	cap.radius = 0.45
-	cap.height = 1.8
-	body_mesh = MeshInstance3D.new()
-	body_mesh.mesh = cap
-	body_mesh.material_override = _body_mat
-	body_mesh.position = Vector3(0, 0.9, 0)
-	add_child(body_mesh)
+	model = Node3D.new()
+	model.set_script(HumanModelScript)
+	add_child(model)
+	model.build(ElementData.get_color(sync_element))
 
+	# Orbe de magie flottante près de l'épaule gauche : montre l'élément actif
 	_orb_mat = StandardMaterial3D.new()
 	_orb_mat.emission_enabled = true
 	var sph := SphereMesh.new()
-	sph.radius = 0.17
-	sph.height = 0.34
+	sph.radius = 0.12
+	sph.height = 0.24
 	orb = MeshInstance3D.new()
 	orb.mesh = sph
 	orb.material_override = _orb_mat
-	orb.position = Vector3(0, 1.55, -0.6)
+	orb.position = Vector3(-0.45, 1.85, 0)
 	add_child(orb)
 
 	orb_light = OmniLight3D.new()
 	orb_light.omni_range = 4.0
-	orb_light.light_energy = 1.2
-	orb_light.position = Vector3(0, 1.55, -0.6)
+	orb_light.light_energy = 1.1
+	orb_light.position = Vector3(-0.45, 1.85, 0)
 	add_child(orb_light)
 
 	name_label = Label3D.new()
@@ -141,9 +147,9 @@ func _build_visuals() -> void:
 func _build_target_ring() -> void:
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = Color(1.0, 0.25, 0.2)
+	mat.albedo_color = Color(1.0, 0.55, 0.15)
 	mat.emission_enabled = true
-	mat.emission = Color(1.0, 0.25, 0.2)
+	mat.emission = Color(1.0, 0.55, 0.15)
 	mat.emission_energy_multiplier = 1.5
 	var torus := TorusMesh.new()
 	torus.inner_radius = 0.7
@@ -157,24 +163,25 @@ func _build_target_ring() -> void:
 
 func _apply_element_visual() -> void:
 	var c: Color = ElementData.get_color(sync_element)
-	_body_mat.albedo_color = c.lerp(Color(0.25, 0.22, 0.3), 0.45)
-	_orb_mat.albedo_color = c
-	_orb_mat.emission = c
-	_orb_mat.emission_energy_multiplier = 2.5
-	orb_light.light_color = c
+	if model:
+		model.set_tint(c)
+	if _orb_mat:
+		_orb_mat.albedo_color = c
+		_orb_mat.emission = c
+		_orb_mat.emission_energy_multiplier = 2.5
+	if orb_light:
+		orb_light.light_color = c
 
 # ------------------------------------------------------------------ BOUCLE
 
 func _physics_process(delta: float) -> void:
 	if not is_multiplayer_authority():
 		return
-	if _want_pick:
-		_want_pick = false
-		_pick_target_under_mouse()
 	_validate_target()
 
 	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	var dir := Vector3(input.x, 0, input.y).rotated(Vector3.UP, CAM_YAW)
+	var cam_yaw: float = cam_rig.yaw if cam_rig else rotation.y
+	var dir := Vector3(input.x, 0, input.y).rotated(Vector3.UP, cam_yaw)
 	var now := _now()
 
 	# Incantation : bouger ou dasher interrompt, la cible FIGÉE doit rester valide
@@ -186,15 +193,22 @@ func _physics_process(delta: float) -> void:
 		elif now >= _cast_until:
 			_complete_cast()
 
+	# Combo mêlée mis en file pendant un coup
+	if _melee_queued and now >= _melee_until:
+		_melee_queued = false
+		_advance_melee()
+
 	var slow := _slow_factor if now < _slow_until else 0.0
-	var eff_speed := SPEED * (1.0 - slow)
+	var speed_mult := 1.0 - slow
+	if now < _melee_until:
+		speed_mult *= MELEE_MOVE_FACTOR
 
 	if now < _dash_until:
 		velocity.x = _dash_dir.x * DASH_SPEED
 		velocity.z = _dash_dir.z * DASH_SPEED
 	else:
-		velocity.x = dir.x * eff_speed
-		velocity.z = dir.z * eff_speed
+		velocity.x = dir.x * SPEED * speed_mult
+		velocity.z = dir.z * SPEED * speed_mult
 
 	if is_on_floor():
 		velocity.y = -0.5
@@ -203,23 +217,43 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 
-	if _casting and _cast_target != null:
-		_face_node(_cast_target)
+	# Orientation : lock-on = toujours face à la cible (strafe autour d'elle)
+	if _is_enemy(current_target):
+		_face_node_smooth(current_target, delta)
+	elif _casting and _cast_target != null and is_instance_valid(_cast_target):
+		_face_node_smooth(_cast_target, delta)
 	elif dir.length() > 0.1:
-		look_at(global_position + dir, Vector3.UP)
+		rotation.y = lerp_angle(rotation.y, atan2(-dir.x, -dir.z), TURN_SPEED * delta)
 
-	_update_camera()
 	_update_target_ring()
+	if model:
+		model.set_locomotion(Vector2(velocity.x, velocity.z).length())
+
+func _process(delta: float) -> void:
+	# Animation de marche des AUTRES joueurs (vitesse déduite de la position)
+	if not is_multiplayer_authority() and model:
+		var spd := (global_position - _prev_pos).length() / maxf(delta, 0.0001)
+		_prev_pos = global_position
+		model.set_locomotion(spd)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_multiplayer_authority():
 		return
-	if event.is_action_pressed("select_target"):
-		_want_pick = true
-	elif event.is_action_pressed("target_cycle"):
-		_cycle_target()
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		if cam_rig:
+			cam_rig.handle_mouse(event.relative)
+	elif event.is_action_pressed("attack"):
+		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED  # re-capture au clic
+		else:
+			_try_melee()
+	elif event.is_action_pressed("lock_on"):
+		_toggle_lock()
 	elif event.is_action_pressed("clear_target"):
-		current_target = null
+		if current_target != null:
+			current_target = null
+		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif event.is_action_pressed("spell_1"):
 		_try_cast_spell(0)
 	elif event.is_action_pressed("spell_2"):
@@ -231,49 +265,54 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("switch_element"):
 		_switch_element()
 	elif event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_cam_dist = clampf(_cam_dist - 1.2, 7.0, 24.0)
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_cam_dist = clampf(_cam_dist + 1.2, 7.0, 24.0)
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP and cam_rig:
+			cam_rig.zoom(-0.6)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and cam_rig:
+			cam_rig.zoom(0.6)
 
-# ------------------------------------------------------------------ CIBLAGE
+# ------------------------------------------------------------------ LOCK-ON
 
-func _pick_target_under_mouse() -> void:
-	if camera == null:
-		return
-	var m := get_viewport().get_mouse_position()
-	var from := camera.project_ray_origin(m)
-	var to := from + camera.project_ray_normal(m) * 200.0
-	var query := PhysicsRayQueryParameters3D.create(from, to)
-	query.exclude = [get_rid()]
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	if hit and hit.has("collider"):
-		var n: Object = hit["collider"]
-		if n is Node3D and (n.is_in_group("players") or n.is_in_group("boss")):
-			current_target = n
-			return
-	# Clic dans le vide → désélection (comme WoW)
-	current_target = null
+func _toggle_lock() -> void:
+	var candidates := _lock_candidates()
+	if current_target != null:
+		var idx := candidates.find(current_target)
+		if candidates.size() > 1 and idx != -1:
+			current_target = candidates[(idx + 1) % candidates.size()]
+		else:
+			current_target = null
+	elif candidates.size() > 0:
+		current_target = candidates[0]
+	else:
+		_toast("Aucune cible à verrouiller")
 
-func _cycle_target() -> void:
-	var candidates: Array = []
+func _lock_candidates() -> Array:
+	var cam_yaw: float = cam_rig.yaw if cam_rig else rotation.y
+	var fwd := Vector3(0, 0, -1).rotated(Vector3.UP, cam_yaw)
+	var list: Array = []
 	for n in get_tree().get_nodes_in_group("players"):
-		if n != self and n.global_position.distance_to(global_position) <= TARGET_MAX_RANGE:
-			candidates.append(n)
+		if n != self and _is_enemy(n):
+			list.append(n)
 	for n in get_tree().get_nodes_in_group("boss"):
-		if n.global_position.distance_to(global_position) <= TARGET_MAX_RANGE:
-			candidates.append(n)
-	if candidates.is_empty():
-		return
-	candidates.sort_custom(func(a, b):
-		return a.global_position.distance_to(global_position) < b.global_position.distance_to(global_position)
-	)
-	var idx: int = candidates.find(current_target)
-	current_target = candidates[(idx + 1) % candidates.size()]
+		if _is_enemy(n):
+			list.append(n)
+	var scored: Array = []
+	for n in list:
+		var to: Vector3 = n.global_position - global_position
+		to.y = 0
+		var d := to.length()
+		if d > LOCK_RANGE or d < 0.01:
+			continue
+		# Priorité : ce que la caméra regarde, puis le plus proche
+		var score: float = fwd.angle_to(to.normalized()) * 2.0 + d * 0.03
+		scored.append({ "n": n, "s": score })
+	scored.sort_custom(func(a, b): return a["s"] < b["s"])
+	return scored.map(func(e): return e["n"])
 
 func _validate_target() -> void:
 	if current_target != null and not _is_enemy(current_target):
 		current_target = null
+	if cam_rig:
+		cam_rig.lock_target = current_target
 
 func _is_enemy(t: Node3D) -> bool:
 	if t == null or not is_instance_valid(t) or t.is_queued_for_deletion():
@@ -296,6 +335,47 @@ func _update_target_ring() -> void:
 	else:
 		target_ring.visible = false
 
+# ------------------------------------------------------------------ MÊLÉE
+
+func _try_melee() -> void:
+	var now := _now()
+	if _casting:
+		return
+	if now < _melee_until:
+		_melee_queued = true  # buffer : le combo s'enchaînera à la fin du coup
+		return
+	if now <= _melee_chain_until and _melee_step < MELEE_DURATIONS.size() - 1:
+		_melee_step += 1
+	else:
+		_melee_step = 0
+	_start_melee()
+
+func _advance_melee() -> void:
+	if _melee_step < MELEE_DURATIONS.size() - 1:
+		_melee_step += 1
+	else:
+		_melee_step = 0
+	_start_melee()
+
+func _start_melee() -> void:
+	var now := _now()
+	_melee_until = now + MELEE_DURATIONS[_melee_step]
+	_melee_chain_until = _melee_until + MELEE_CHAIN_WINDOW
+	if _is_enemy(current_target):
+		_face_node(current_target)
+	if model:
+		model.play_melee(_melee_step)
+	var world := get_tree().get_first_node_in_group("world")
+	if world:
+		world.rpc_id(1, "request_melee", sync_element, _melee_step)
+
+# Vue distante d'une attaque (diffusée par le serveur via fx_melee)
+func play_melee_anim(step: int) -> void:
+	if is_multiplayer_authority():
+		return  # déjà jouée localement au moment du clic
+	if model:
+		model.play_melee(step)
+
 # ------------------------------------------------------------------ SORTS
 
 func _try_cast_spell(slot: int) -> void:
@@ -307,6 +387,8 @@ func _try_cast_spell(slot: int) -> void:
 	if _casting:
 		_toast("Déjà en train d'incanter !")
 		return
+	if now < _melee_until:
+		return  # on finit le coup d'épée d'abord
 	if now < _gcd_until:
 		return
 	if now < _cds.get(spell["id"], 0.0):
@@ -314,12 +396,12 @@ func _try_cast_spell(slot: int) -> void:
 		return
 	if spell["kind"] == "bolt":
 		if not _target_is_enemy():
-			_toast("Aucune cible !")
+			_toast("Verrouille une cible (Tab) !")
 			return
 		if global_position.distance_to(current_target.global_position) > float(spell["range"]):
 			_toast("Trop loin !")
 			return
-		_face_target()
+		_face_node(current_target)
 	if float(spell["cast_time"]) <= 0.0:
 		_gcd_until = now + GCD
 		_send_cast(slot, spell)
@@ -334,22 +416,27 @@ func _try_cast_spell(slot: int) -> void:
 		_cast_slot = slot
 		_cast_spell = spell
 		# La cible est FIGÉE au début du cast (comme WoW) : changer de cible
-		# avec Tab/clic pendant l'incantation ne redirige pas le sort.
+		# pendant l'incantation ne redirige pas le sort.
 		_cast_target = current_target if spell["kind"] == "bolt" else null
 		_cast_started = now
 		_cast_until = now + float(spell["cast_time"])
 		_gcd_until = now + GCD
+		if model:
+			model.set_casting(true)
 
 func _complete_cast() -> void:
 	_casting = false
+	if model:
+		model.set_casting(false)
 	_send_cast(_cast_slot, _cast_spell, _cast_target)
 	_cast_target = null
 
 func _cancel_cast(msg: String) -> void:
 	_casting = false
 	_cast_target = null
+	if model:
+		model.set_casting(false)
 	# Le GCD armé au début du cast est remboursé : aucun sort n'est parti
-	# (sans ça, une interruption verrouillait tous les sorts pendant 0.8s).
 	_gcd_until = 0.0
 	_toast(msg)
 
@@ -359,8 +446,7 @@ func _send_cast(slot: int, spell: Dictionary, snapshot_target: Node3D = null) ->
 	var tn := ""
 	if spell["kind"] == "bolt":
 		# Cible et portée re-vérifiées AVANT de consommer le cooldown : la
-		# cible a pu disparaître ou fuir pendant l'incantation — sinon on
-		# paierait un cooldown pour un sort que le serveur rejette en silence.
+		# cible a pu disparaître ou fuir pendant l'incantation.
 		if not _is_enemy(t):
 			return
 		if global_position.distance_to(t.global_position) > float(spell["range"]) + 4.0:
@@ -383,10 +469,12 @@ func _switch_element() -> void:
 	sync_element = unlocked[(idx + 1) % unlocked.size()]
 
 # Appelé via world.gd après un respawn : nettoie l'état transitoire
-# (un mort ne continue pas son incantation et n'est plus ralenti)
 func on_respawned() -> void:
 	_casting = false
+	_cast_target = null
 	_slow_until = 0.0
+	if model:
+		model.set_casting(false)
 
 # Appelé via world.gd quand le serveur accorde une nouvelle magie (boss PvE)
 func grant_element(element: String) -> void:
@@ -399,8 +487,7 @@ func grant_element(element: String) -> void:
 # ------------------------------------------------------------------ EFFETS
 
 func apply_slow(pct: float, duration: float) -> void:
-	# max/max : un debuff plus faible ne doit jamais ÉCRASER un slow plus
-	# fort déjà actif (ni raccourcir sa durée).
+	# max/max : un debuff plus faible n'écrase jamais un slow plus fort actif
 	var now := _now()
 	if now >= _slow_until:
 		_slow_factor = 0.0
@@ -460,15 +547,13 @@ func _try_dash() -> void:
 	if _casting:
 		_cancel_cast("Sort interrompu !")
 	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	var dir := Vector3(input.x, 0, input.y).rotated(Vector3.UP, CAM_YAW)
+	var cam_yaw: float = cam_rig.yaw if cam_rig else rotation.y
+	var dir := Vector3(input.x, 0, input.y).rotated(Vector3.UP, cam_yaw)
 	if dir.length() < 0.1:
 		dir = -global_transform.basis.z
 	_dash_dir = dir.normalized()
 	_dash_until = now + DASH_DURATION
 	_dash_cd_until = now + DASH_COOLDOWN
-
-func _face_target() -> void:
-	_face_node(current_target)
 
 func _face_node(t: Node3D) -> void:
 	if not _is_enemy(t):
@@ -478,13 +563,14 @@ func _face_node(t: Node3D) -> void:
 	if flat.distance_to(global_position) > 0.2:
 		look_at(flat, Vector3.UP)
 
-func _update_camera() -> void:
-	if camera == null:
+func _face_node_smooth(t: Node3D, delta: float) -> void:
+	if t == null or not is_instance_valid(t):
 		return
-	var offset := Vector3(sin(CAM_YAW), 0, cos(CAM_YAW)) * cos(CAM_PITCH) * _cam_dist
-	offset.y = sin(CAM_PITCH) * _cam_dist
-	camera.global_position = global_position + offset
-	camera.look_at(global_position + Vector3.UP * 1.0, Vector3.UP)
+	var to := t.global_position - global_position
+	to.y = 0
+	if to.length() < 0.2:
+		return
+	rotation.y = lerp_angle(rotation.y, atan2(-to.x, -to.z), TURN_SPEED * delta)
 
 func _toast(msg: String) -> void:
 	var world := get_tree().get_first_node_in_group("world")
@@ -496,15 +582,15 @@ func _toast(msg: String) -> void:
 func _autotest_tick() -> void:
 	_autotest_count += 1
 	if _autotest_count == 1:
-		# Se téléporte près de l'arène du boss pour tester le combat complet
-		global_position = Vector3(28, 0.2, 28)
+		# Se téléporte au contact du boss pour tester mêlée + sorts
+		global_position = Vector3(32, 0.2, 33)
 		return
 	if not _target_is_enemy():
-		_cycle_target()
+		_toggle_lock()
 	match _autotest_count % 4:
 		0:
-			_try_cast_spell(2)  # nova (instantané sans cible)
+			_try_cast_spell(2)  # nova
 		1:
-			_try_cast_spell(1)  # boule de feu (1.8s d'incantation — teste _casting)
+			_try_cast_spell(0)  # trait ciblé
 		_:
-			_try_cast_spell(0)  # trait (instantané ciblé)
+			_try_melee()        # combos d'épée

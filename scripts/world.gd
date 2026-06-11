@@ -12,6 +12,10 @@ const BOSS_RESPAWN_DELAY := 30.0
 const GCD_MS := 750
 const RANGE_SLACK := 4.0
 const RESPAWN_INVULN_MS := 2500
+const MELEE_RANGE := 2.6
+const MELEE_ARC_DEG := 120.0
+const MELEE_DAMAGE := [8, 10, 16]
+const MELEE_MIN_INTERVAL_MS := 280
 
 const PlayerScene := preload("res://scenes/player.tscn")
 const ProjectileScene := preload("res://scenes/projectile.tscn")
@@ -28,6 +32,7 @@ var boss_spawner: MultiplayerSpawner
 var player_hp := {}          # peer_id -> hp
 var _spell_cd := {}          # peer_id -> { spell_id: until_msec }
 var _gcd_until := {}         # peer_id -> msec
+var _melee_last := {}        # peer_id -> msec du dernier coup d'épée
 var _buffs := {}             # peer_id -> { frost_armor_until: msec }
 var _invuln_until := {}      # peer_id -> msec
 var _projectile_counter := 0
@@ -144,6 +149,7 @@ func _on_player_left(id: int) -> void:
 	player_hp.erase(id)
 	_spell_cd.erase(id)
 	_gcd_until.erase(id)
+	_melee_last.erase(id)
 	_buffs.erase(id)
 	_invuln_until.erase(id)
 
@@ -242,6 +248,47 @@ func request_spell(element: String, slot: int, target_kind: String, target_name:
 			buffs["frost_armor_until"] = now + int(dur * 1000.0)
 			_buffs[sender] = buffs
 			rpc("fx_buff", sender, dur)
+
+# Coup d'épée type Elden Ring : le serveur valide la cadence puis touche
+# tout ennemi dans la portée ET dans l'arc frontal du lanceur.
+# L'épée porte l'élément actif → la roue des contres s'applique aussi en mêlée.
+@rpc("any_peer", "call_local", "reliable")
+func request_melee(element: String, step: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender == 0:
+		sender = multiplayer.get_unique_id()
+	var caster := players_node.get_node_or_null(str(sender))
+	if caster == null:
+		return
+	if step < 0 or step >= MELEE_DAMAGE.size():
+		return
+	if element not in Net.players.get(sender, {}).get("unlocked", []):
+		return
+	var now := Time.get_ticks_msec()
+	if _melee_last.get(sender, 0) + MELEE_MIN_INTERVAL_MS > now:
+		return
+	_melee_last[sender] = now
+	rpc("fx_melee", sender, step)
+
+	var facing: Vector3 = -caster.global_transform.basis.z
+	facing.y = 0
+	facing = facing.normalized()
+	var targets: Array = []
+	for p in get_tree().get_nodes_in_group("players"):
+		if p != caster:
+			targets.append(p)
+	for b in get_tree().get_nodes_in_group("boss"):
+		targets.append(b)
+	for t in targets:
+		var to: Vector3 = t.global_position - caster.global_position
+		to.y = 0
+		var d := to.length()
+		if d > MELEE_RANGE or d < 0.01:
+			continue
+		if facing.angle_to(to.normalized()) <= deg_to_rad(MELEE_ARC_DEG * 0.5):
+			server_handle_hit(t, MELEE_DAMAGE[step], element, sender)
 
 # Spawn d'un projectile autoguidé — utilisé par les joueurs ET le boss
 func server_spawn_bolt(from: Vector3, element: String, damage: int, target_kind: String, target_name: String, shooter: int, extra := {}) -> void:
@@ -444,6 +491,13 @@ func fx_buff(id: int, duration: float) -> void:
 	if node:
 		node.show_buff_bubble(duration)
 
+# Diffuse l'animation d'un coup d'épée à tous les pairs
+@rpc("authority", "call_local", "reliable")
+func fx_melee(id: int, step: int) -> void:
+	var node := players_node.get_node_or_null(str(id))
+	if node:
+		node.play_melee_anim(step)
+
 # ---------------------------------------------------------------- HUD
 
 func _build_hud() -> void:
@@ -452,7 +506,7 @@ func _build_hud() -> void:
 	add_child(hud)
 
 	var help := Label.new()
-	help.text = "ZQSD/WASD bouger  •  Clic gauche cibler  •  Tab cible proche  •  1-3 sorts  •  R changer de magie  •  Espace dash  •  Échap annuler la cible"
+	help.text = "ZQSD bouger  •  Souris caméra  •  Clic gauche attaque (recliquer = combo)  •  Tab verrouiller la cible  •  1-3 sorts  •  R magie  •  Espace dash  •  Échap déverrouiller/souris"
 	help.position = Vector2(16, 12)
 	help.add_theme_font_size_override("font_size", 13)
 	help.add_theme_color_override("font_color", Color(1, 1, 1, 0.75))

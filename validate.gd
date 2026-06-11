@@ -12,6 +12,8 @@ func _init() -> void:
 		"res://scripts/menu.gd",
 		"res://scripts/world.gd",
 		"res://scripts/player.gd",
+		"res://scripts/human_model.gd",
+		"res://scripts/third_person_camera.gd",
 		"res://scripts/projectile.gd",
 		"res://scripts/boss.gd",
 		"res://scenes/menu.tscn",
