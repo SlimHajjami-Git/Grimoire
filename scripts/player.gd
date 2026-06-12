@@ -23,7 +23,11 @@ const TURN_SPEED := 12.0
 const MELEE_DURATIONS := [0.45, 0.45, 0.65]
 const MELEE_CHAIN_WINDOW := 0.55
 
-const CharacterRigScript := preload("res://scripts/character_rig.gd")
+# Modèle du joueur : true = humain réaliste (Mixamo + MeleeLib),
+# false = Mage KayKit (chibi cartoon). Les deux ont la même API.
+const USE_HUMAN_MODEL := true
+const HumanRigScript := preload("res://scripts/human_rig.gd")
+const KayKitRigScript := preload("res://scripts/character_rig.gd")
 const CameraRigScript := preload("res://scripts/third_person_camera.gd")
 
 @export var player_name := "Mage"
@@ -105,7 +109,7 @@ func _ready() -> void:
 
 func _build_visuals() -> void:
 	model = Node3D.new()
-	model.set_script(CharacterRigScript)
+	model.set_script(HumanRigScript if USE_HUMAN_MODEL else KayKitRigScript)
 	add_child(model)
 	model.build(ElementData.get_color(sync_element))
 

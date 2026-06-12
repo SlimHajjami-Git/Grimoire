@@ -31,11 +31,18 @@ le modèle serveur de **Rust** (un monde = un serveur, pas un MMO mondial).
 | Échap | Déverrouille la cible, puis libère la souris |
 | Molette | Zoom caméra |
 
-Le personnage est le **Mage du pack KayKit Adventurers** (Kay Lousberg, licence
-CC0 — `assets/kaykit/LICENSE.txt`) : modèle riggé low-poly avec 75 animations
-professionnelles (marche, course, attaques, incantation, esquive, réactions aux
-coups). Chapeau de mage, cape et baguette inclus. Les 3 autres personnages du
-pack (Chevalier, Barbare, Voleur) pourront servir de classes/skins plus tard.
+**Deux modèles de joueur disponibles** (toggle `USE_HUMAN_MODEL` dans `player.gd`) :
+
+1. **Humain réaliste** (actif par défaut) — personnage Mixamo du repo
+   [Tuto-Godot de PeGeDevelopment](https://github.com/PeGeDevelopment/Tuto-Godot)
+   (MIT), squelette retargeté sur le profil humanoïde Godot, animé par la
+   **MeleeLib** de [Godot4-OpenAnimationLibraries](https://github.com/catprisbrey/Godot4-OpenAnimationLibraries)
+   (combo Slash1/2/3, roulade d'esquive, strafes en garde, canalisation,
+   réactions aux coups). Pipeline réutilisable : n'importe quel personnage
+   Mixamo s'intègre en 5 min via `assets/human/MixamoBoneMap.tres`.
+2. **Mage KayKit Adventurers** (Kay Lousberg, CC0 — `assets/kaykit/LICENSE.txt`),
+   style chibi cartoon, 75 animations. Chevalier/Barbare/Voleur dispo dans le
+   même pack pour des classes futures.
 
 **La mêlée** : 3 coups d'épée enchaînables au clic (le 3ᵉ est un coup à deux
 mains plus lourd). L'épée est **imprégnée de ta magie active** → la roue des

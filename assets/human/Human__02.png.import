@@ -1,0 +1,37 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://bkxwj1a31h3r4"
+path="res://.godot/imported/Human__02.png-b8c79849a28b3c5ce04d8eb8a44fff60.ctex"
+metadata={
+"vram_texture": false
+}
+generator_parameters={
+"md5": "a8bb3ba5fea1e0ed4965351fc0a4750a"
+}
+
+[deps]
+
+source_file="res://assets/human/Human__02.png"
+dest_files=["res://.godot/imported/Human__02.png-b8c79849a28b3c5ce04d8eb8a44fff60.ctex"]
+
+[params]
+
+compress/mode=0
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/hdr_compression=1
+compress/normal_map=0
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=1
