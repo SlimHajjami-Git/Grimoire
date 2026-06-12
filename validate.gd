@@ -7,6 +7,7 @@ func _init() -> void:
 	var paths := [
 		"res://scripts/element_data.gd",
 		"res://scripts/spell_data.gd",
+		"res://scripts/vfx.gd",
 		"res://scripts/input_setup.gd",
 		"res://scripts/net.gd",
 		"res://scripts/menu.gd",

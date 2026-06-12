@@ -25,7 +25,7 @@ le modèle serveur de **Rust** (un monde = un serveur, pas un MMO mondial).
 | Souris | Caméra 3ᵉ personne, vue de dos (orbite libre) |
 | **Clic gauche** | **Coup d'épée — re-cliquer enchaîne les combos (1→2→3)** |
 | Tab / clic-molette | **Lock-on** : verrouille la cible (re-Tab : cible suivante) |
-| 1 / 2 / 3 | Sorts de la magie active (sur la cible verrouillée) |
+| 1 / 2 / 3 / 4 | Sorts de la magie active (sur la cible verrouillée) |
 | R | Changer de magie (parmi celles débloquées) |
 | Espace | Dash |
 | Échap | Déverrouille la cible, puis libère la souris |
@@ -61,6 +61,7 @@ l'interrompt** (la mêlée, elle, reste mobile).
 | 1 | Trait de feu | 11 dégâts, instantané, CD 1.2s |
 | 2 | Boule de feu | 30 dégâts, incantation 1.8s, CD 6s |
 | 3 | Nova ardente | 16 dégâts AoE 8m autour de soi, CD 10s |
+| 4 | Météore | 35 dégâts AoE 4m **télégraphiés** au sol (0.9s → esquivable au dash), CD 12s |
 
 **❄ GLACE** (débloquée en tuant le Gardien de Givre)
 | Touche | Sort | Effet |
@@ -68,6 +69,11 @@ l'interrompt** (la mêlée, elle, reste mobile).
 | 1 | Éclat de givre | 9 dégâts + ralentit 35% pendant 2.5s, CD 1.2s |
 | 2 | Lance de glace | 28 dégâts, incantation 2s, CD 6s |
 | 3 | Armure de givre | -30% dégâts subis pendant 5s, CD 14s |
+| 4 | Blizzard | 18 dégâts AoE 4.5m télégraphiés (0.8s) + ralentit 50% pendant 3s, CD 12s |
+
+**VFX** : canalisation visible (lueur + particules dans les mains, vue par tous
+les joueurs), traînées de particules sur les projectiles (pic de cristal pour
+la glace), explosions d'impact, télégraphes de zone au sol lisibles.
 
 Tous les sorts ciblés sont **autoguidés** (comme la boule de feu de WoW) mais
 le **décor bloque les projectiles** → se cacher derrière un arbre fonctionne.

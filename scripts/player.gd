@@ -272,6 +272,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_try_cast_spell(1)
 	elif event.is_action_pressed("spell_3"):
 		_try_cast_spell(2)
+	elif event.is_action_pressed("spell_4"):
+		_try_cast_spell(3)
 	elif event.is_action_pressed("dash"):
 		_try_dash()
 	elif event.is_action_pressed("switch_element"):
@@ -413,7 +415,7 @@ func _try_cast_spell(slot: int) -> void:
 	if now < _cds.get(spell["id"], 0.0):
 		_toast("%s n'est pas prêt" % spell["name"])
 		return
-	if spell["kind"] == "bolt":
+	if spell["kind"] in ["bolt", "strike"]:
 		if not _target_is_enemy():
 			_toast("Verrouille une cible (Tab) !")
 			return
@@ -422,8 +424,12 @@ func _try_cast_spell(slot: int) -> void:
 			return
 		_face_node(current_target)
 	if float(spell["cast_time"]) <= 0.0:
-		_gcd_until = now + GCD
-		_send_cast(slot, spell)
+		# GCD et animation seulement si le sort part vraiment
+		if _send_cast(slot, spell):
+			_gcd_until = now + GCD
+			if model:
+				model.play_cast_shoot()
+			_notify_cast_state(false, true)
 	else:
 		# Démarrer une incantation en mouvement = auto-interruption à la frame
 		# suivante + GCD brûlé pour rien. On refuse proprement à la place.
@@ -442,15 +448,18 @@ func _try_cast_spell(slot: int) -> void:
 		_gcd_until = now + GCD
 		if model:
 			model.set_casting(true)
+		_set_cast_glow(true)
 		_notify_cast_state(true, false)
 
 func _complete_cast() -> void:
 	_casting = false
 	if model:
 		model.set_casting(false)
+	_set_cast_glow(false)
+	var sent := _send_cast(_cast_slot, _cast_spell, _cast_target)
+	if sent and model:
 		model.play_cast_shoot()
-	_notify_cast_state(false, true)
-	_send_cast(_cast_slot, _cast_spell, _cast_target)
+	_notify_cast_state(false, sent)
 	_cast_target = null
 
 func _cancel_cast(msg: String) -> void:
@@ -458,10 +467,25 @@ func _cancel_cast(msg: String) -> void:
 	_cast_target = null
 	if model:
 		model.set_casting(false)
+	_set_cast_glow(false)
 	_notify_cast_state(false, false)
 	# Le GCD armé au début du cast est remboursé : aucun sort n'est parti
 	_gcd_until = 0.0
 	_toast(msg)
+
+# Lueur de canalisation devant la poitrine — créée/détruite avec l'état de
+# cast, sur le client local ET sur les vues distantes (via play_cast_anim).
+var _cast_glow: Node3D = null
+
+func _set_cast_glow(on: bool) -> void:
+	if on and _cast_glow == null:
+		_cast_glow = Vfx.make_cast_glow(ElementData.get_color(sync_element))
+		_cast_glow.position = Vector3(0, 1.25, -0.4)
+		add_child(_cast_glow)
+	elif not on and _cast_glow != null:
+		if is_instance_valid(_cast_glow):
+			_cast_glow.queue_free()
+		_cast_glow = null
 
 # Prévient le serveur (qui rediffuse) qu'une incantation commence/finit :
 # c'est ce qui rend le wind-up visible par les AUTRES joueurs — le
@@ -479,19 +503,21 @@ func play_cast_anim(casting: bool, shoot: bool) -> void:
 		model.set_casting(casting)
 		if shoot:
 			model.play_cast_shoot()
+	_set_cast_glow(casting)
 
-func _send_cast(slot: int, spell: Dictionary, snapshot_target: Node3D = null) -> void:
+# Retourne true si le sort est réellement parti (cooldown consommé)
+func _send_cast(slot: int, spell: Dictionary, snapshot_target: Node3D = null) -> bool:
 	var t := snapshot_target if snapshot_target != null else current_target
 	var tk := ""
 	var tn := ""
-	if spell["kind"] == "bolt":
+	if spell["kind"] in ["bolt", "strike"]:
 		# Cible et portée re-vérifiées AVANT de consommer le cooldown : la
 		# cible a pu disparaître ou fuir pendant l'incantation.
 		if not _is_enemy(t):
-			return
+			return false
 		if global_position.distance_to(t.global_position) > float(spell["range"]) + 4.0:
 			_toast("Trop loin !")
-			return
+			return false
 		tk = "boss" if t.is_in_group("boss") else "player"
 		tn = String(t.name)
 	_cds[spell["id"]] = _now() + float(spell["cooldown"])
@@ -499,6 +525,7 @@ func _send_cast(slot: int, spell: Dictionary, snapshot_target: Node3D = null) ->
 	var world := get_tree().get_first_node_in_group("world")
 	if world:
 		world.rpc_id(1, "request_spell", sync_element, slot, tk, tn)
+	return true
 
 func _switch_element() -> void:
 	if unlocked.size() <= 1:
@@ -515,6 +542,7 @@ func on_respawned() -> void:
 	_slow_until = 0.0
 	if model:
 		model.set_casting(false)
+	_set_cast_glow(false)
 	_notify_cast_state(false, false)
 
 # Appelé via world.gd quand le serveur accorde une nouvelle magie (boss PvE)
@@ -665,6 +693,21 @@ func _run_phototest() -> void:
 	print("[PHOTO] anim strafe en lock : ", model.debug_anim())
 	await _snap("photo_5_strafe_lock")
 	Input.action_release("move_left")
+	# 6 : canalisation de la boule de feu — lueur + pose d'incantation
+	await get_tree().create_timer(0.4).timeout
+	if not _target_is_enemy():
+		_toggle_lock()
+	_try_cast_spell(1)  # boule de feu, 1.8s d'incantation
+	await get_tree().create_timer(1.0).timeout
+	print("[PHOTO] anim canalisation : ", model.debug_anim())
+	await _snap("photo_6_canalisation")
+	# 7 : projectile en vol avec sa traînée (juste après la fin du cast)
+	await get_tree().create_timer(1.1).timeout
+	await _snap("photo_7_projectile")
+	# 8 : télégraphe du Météore au sol
+	_try_cast_spell(3)
+	await get_tree().create_timer(0.5).timeout
+	await _snap("photo_8_telegraphe")
 	get_tree().quit()
 
 func _snap(file_name: String) -> void:
@@ -683,10 +726,12 @@ func _autotest_tick() -> void:
 		return
 	if not _target_is_enemy():
 		_toggle_lock()
-	match _autotest_count % 4:
+	match _autotest_count % 5:
 		0:
 			_try_cast_spell(2)  # nova
 		1:
 			_try_cast_spell(0)  # trait ciblé
+		2:
+			_try_cast_spell(3)  # frappe télégraphiée (strike)
 		_:
 			_try_melee()        # combos d'épée

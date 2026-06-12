@@ -16,6 +16,7 @@ config/icon="res://icon.svg"
 ElementData="*res://scripts/element_data.gd"
 SpellData="*res://scripts/spell_data.gd"
 InputSetup="*res://scripts/input_setup.gd"
+Vfx="*res://scripts/vfx.gd"
 Net="*res://scripts/net.gd"
 
 [display]

@@ -5,8 +5,11 @@ extends Node
 #   "bolt"      → projectile autoguidé vers la CIBLE (nécessite une cible)
 #   "nova"      → AoE instantanée autour du lanceur (pas de cible requise)
 #   "self_buff" → buff sur soi-même (pas de cible requise)
+#   "strike"    → frappe au sol TÉLÉGRAPHIÉE sur la position de la cible :
+#                 zone marquée pendant `delay` secondes → ESQUIVABLE au dash
 # Champs optionnels : slow / slow_duration (ralentissement appliqué à l'impact),
-#                     buff / buff_duration (pour self_buff)
+#                     buff / buff_duration (pour self_buff),
+#                     radius / delay (pour strike)
 
 const SPELLS := {
 	"fire": [
@@ -16,6 +19,9 @@ const SPELLS := {
 			"damage": 30, "cast_time": 1.8, "cooldown": 6.0, "range": 32.0, "kind": "bolt" },
 		{ "id": "fire_nova", "name": "Nova ardente", "icon": "💥",
 			"damage": 16, "cast_time": 0.0, "cooldown": 10.0, "range": 8.0, "kind": "nova" },
+		{ "id": "meteor", "name": "Météore", "icon": "🌠",
+			"damage": 35, "cast_time": 0.0, "cooldown": 12.0, "range": 30.0, "kind": "strike",
+			"radius": 4.0, "delay": 0.9 },
 	],
 	"ice": [
 		{ "id": "frost_shard", "name": "Éclat de givre", "icon": "❄",
@@ -26,6 +32,9 @@ const SPELLS := {
 		{ "id": "frost_armor", "name": "Armure de givre", "icon": "🛡",
 			"damage": 0, "cast_time": 0.0, "cooldown": 14.0, "range": 0.0, "kind": "self_buff",
 			"buff": "frost_armor", "buff_duration": 5.0 },
+		{ "id": "blizzard", "name": "Blizzard", "icon": "🌨",
+			"damage": 18, "cast_time": 0.0, "cooldown": 12.0, "range": 30.0, "kind": "strike",
+			"radius": 4.5, "delay": 0.8, "slow": 0.5, "slow_duration": 3.0 },
 	],
 }
 

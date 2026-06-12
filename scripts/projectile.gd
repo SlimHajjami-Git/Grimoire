@@ -49,13 +49,26 @@ func _build_visuals() -> void:
 	mat.emission_enabled = true
 	mat.emission = c
 	mat.emission_energy_multiplier = 3.5
-	var sph := SphereMesh.new()
-	sph.radius = 0.22
-	sph.height = 0.44
+
+	# Forme par élément : pic de cristal pour la glace, orbe pour le reste
 	var mesh := MeshInstance3D.new()
-	mesh.mesh = sph
+	if element == "ice":
+		var spike := CylinderMesh.new()
+		spike.top_radius = 0.0
+		spike.bottom_radius = 0.14
+		spike.height = 0.7
+		mesh.mesh = spike
+		mesh.rotation_degrees = Vector3(-90, 0, 0)  # pointe vers -Z (sens du vol)
+	else:
+		var sph := SphereMesh.new()
+		sph.radius = 0.22
+		sph.height = 0.44
+		mesh.mesh = sph
 	mesh.material_override = mat
 	add_child(mesh)
+
+	# Traînée de particules
+	add_child(Vfx.make_trail(c))
 
 	var light := OmniLight3D.new()
 	light.light_color = c
@@ -75,6 +88,10 @@ func _physics_process(delta: float) -> void:
 		_target = null
 
 	position += dir * SPEED * delta
+	# Oriente le projectile dans le sens du vol (le pic de glace pointe devant)
+	var flat_dir := Vector3(dir.x, 0, dir.z)
+	if flat_dir.length() > 0.1:
+		look_at(global_position + dir, Vector3.UP)
 	_age += delta
 	# Seul le serveur détruit : le despawn est répliqué par le spawner
 	if _age > LIFETIME and multiplayer.is_server():

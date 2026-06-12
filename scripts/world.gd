@@ -212,7 +212,7 @@ func request_spell(element: String, slot: int, target_kind: String, target_name:
 		return
 
 	var target: Node3D = null
-	if spell["kind"] == "bolt":
+	if spell["kind"] in ["bolt", "strike"]:
 		target = resolve_target_node(target_kind, target_name)
 		if target == null or target == caster:
 			return
@@ -254,6 +254,30 @@ func request_spell(element: String, slot: int, target_kind: String, target_name:
 			buffs["frost_armor_until"] = now + int(dur * 1000.0)
 			_buffs[sender] = buffs
 			rpc("fx_buff", sender, dur)
+		"strike":
+			# Frappe au sol télégraphiée : la zone est marquée sur la position
+			# ACTUELLE de la cible — elle a `delay` secondes pour l'esquiver.
+			var radius := float(spell.get("radius", 4.0))
+			var delay := float(spell.get("delay", 0.9))
+			var strike_pos: Vector3 = target.global_position
+			strike_pos.y = 0.05
+			var dmg := int(spell["damage"])
+			var extra := {
+				"slow": float(spell.get("slow", 0.0)),
+				"slow_duration": float(spell.get("slow_duration", 0.0)),
+			}
+			rpc("fx_strike_telegraph", strike_pos, radius, element, delay)
+			get_tree().create_timer(delay).timeout.connect(func():
+				if not is_inside_tree() or not multiplayer.is_server():
+					return
+				rpc("fx_strike_burst", strike_pos, radius, element)
+				for p in get_tree().get_nodes_in_group("players"):
+					if p.global_position.distance_to(strike_pos) <= radius:
+						server_handle_hit(p, dmg, element, sender, extra)
+				for b in get_tree().get_nodes_in_group("boss"):
+					if b.global_position.distance_to(strike_pos) <= radius:
+						server_handle_hit(b, dmg, element, sender, extra)
+			)
 
 # Coup d'épée type Elden Ring : le serveur valide la cadence puis touche
 # tout ennemi dans la portée ET dans l'arc frontal du lanceur.
@@ -343,6 +367,7 @@ func _hit_boss(boss: Node3D, base_damage: int, element: String, shooter: int, ex
 	if float(extra.get("slow", 0.0)) > 0.0:
 		boss.apply_slow(float(extra["slow"]), float(extra["slow_duration"]))
 	print("[HIT] Boss -%d (%s x%.1f) par joueur %d → %d PV" % [dmg, element, mult, shooter, boss.hp])
+	rpc("fx_impact", boss.global_position + Vector3.UP * 1.5, element)
 	rpc("fx_damage_number", boss.global_position + Vector3.UP * 3.2, dmg, mult)
 	rpc("sync_boss_hp", String(boss.name), boss.hp)
 	if boss.hp <= 0:
@@ -377,6 +402,7 @@ func _hit_player(target: Node3D, base_damage: int, element: String, shooter: int
 		dmg = int(round(dmg * 0.7))  # Armure de givre : -30% dégâts
 	player_hp[id] = player_hp.get(id, 100) - dmg
 	print("[HIT] joueur %d -%d (%s x%.1f) par %d → %d PV" % [id, dmg, element, mult, shooter, player_hp[id]])
+	rpc("fx_impact", target.global_position + Vector3.UP * 1.2, element)
 	rpc("fx_damage_number", target.global_position + Vector3.UP * 2.2, dmg, mult)
 	rpc("sync_hp", id, player_hp[id], false)
 	if player_hp[id] <= 0:
@@ -503,6 +529,19 @@ func fx_buff(id: int, duration: float) -> void:
 	if node:
 		node.show_buff_bubble(duration)
 
+@rpc("authority", "call_local", "reliable")
+func fx_impact(pos: Vector3, element: String) -> void:
+	Vfx.impact_burst(self, pos, ElementData.get_color(element))
+
+@rpc("authority", "call_local", "reliable")
+func fx_strike_telegraph(pos: Vector3, radius: float, element: String, delay: float) -> void:
+	Vfx.strike_telegraph(self, pos, radius, ElementData.get_color(element), delay)
+
+@rpc("authority", "call_local", "reliable")
+func fx_strike_burst(pos: Vector3, radius: float, element: String) -> void:
+	Vfx.impact_burst(self, pos + Vector3.UP * 0.5, ElementData.get_color(element), 2.5)
+	fx_nova(pos, element, radius)
+
 # Diffuse l'animation d'un coup d'épée à tous les pairs
 @rpc("authority", "call_local", "reliable")
 func fx_melee(id: int, step: int) -> void:
@@ -536,7 +575,7 @@ func _build_hud() -> void:
 	add_child(hud)
 
 	var help := Label.new()
-	help.text = "ZQSD bouger  •  Souris caméra  •  Clic gauche attaque (recliquer = combo)  •  Tab verrouiller la cible  •  1-3 sorts  •  R magie  •  Espace dash  •  Échap déverrouiller/souris"
+	help.text = "ZQSD bouger  •  Souris caméra  •  Clic gauche attaque (recliquer = combo)  •  Tab verrouiller la cible  •  1-4 sorts  •  R magie  •  Espace dash  •  Échap déverrouiller/souris"
 	help.position = Vector2(16, 12)
 	help.add_theme_font_size_override("font_size", 13)
 	help.add_theme_color_override("font_color", Color(1, 1, 1, 0.75))
@@ -618,8 +657,8 @@ func _build_hud() -> void:
 	spell_bar.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	spell_bar.offset_top = -100.0
 	spell_bar.offset_bottom = -28.0
-	spell_bar.offset_left = -260.0
-	spell_bar.offset_right = 260.0
+	spell_bar.offset_left = -340.0
+	spell_bar.offset_right = 340.0
 	spell_bar.alignment = BoxContainer.ALIGNMENT_CENTER
 	spell_bar.add_theme_constant_override("separation", 10)
 	hud.add_child(spell_bar)
