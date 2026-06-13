@@ -64,6 +64,14 @@ func _run() -> void:
 	Vfx.impact_burst(self, Vector3(0, 0, 0), ElementData.get_color("fire"), 1.3)
 	await get_tree().create_timer(0.12).timeout
 	await _snap("vfx_4_impact")
+
+	# 5 : Souffle du Dragon — tire vers +X (droite), vu de côté
+	var breath := Vfx.make_dragon_breath(ElementData.get_color("fire"), 2.0)
+	breath.rotation_degrees = Vector3(0, -90, 0)
+	breath.position = Vector3(-2.5, 0, 0)
+	add_child(breath)
+	await get_tree().create_timer(0.6).timeout
+	await _snap("vfx_5_souffle_dragon")
 	get_tree().quit()
 
 func _snap(file_name: String) -> void:

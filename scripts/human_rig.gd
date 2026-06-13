@@ -88,6 +88,10 @@ func play_dash() -> void:
 func play_cast_shoot() -> void:
 	_play_action("m/ThrowR", 0.4)
 
+func play_breath(duration: float) -> void:
+	# Pose d'exertion tenue pendant tout le rugissement
+	_play_action("m/HeavyCharge", duration)
+
 func play_hit() -> void:
 	if _now() < _busy_until:
 		return

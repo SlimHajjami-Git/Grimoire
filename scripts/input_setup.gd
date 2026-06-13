@@ -17,6 +17,7 @@ func _enter_tree() -> void:
 	_key("spell_2", KEY_2)
 	_key("spell_3", KEY_3)
 	_key("spell_4", KEY_4)
+	_key("spell_5", KEY_5)
 	_mouse("attack", MOUSE_BUTTON_LEFT)
 	_mouse("lock_on", MOUSE_BUTTON_MIDDLE)
 

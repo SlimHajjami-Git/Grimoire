@@ -82,6 +82,10 @@ func play_dash() -> void:
 func play_cast_shoot() -> void:
 	_play_action("Spellcast_Shoot", 0.4)
 
+func play_breath(duration: float) -> void:
+	# Incantation longue tenue pendant tout le rugissement
+	_play_action("Spellcast_Long", duration)
+
 func play_hit() -> void:
 	# Réaction aux dégâts — seulement si aucune action n'est en cours
 	if _now() < _busy_until:

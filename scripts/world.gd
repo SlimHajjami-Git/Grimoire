@@ -254,6 +254,25 @@ func request_spell(element: String, slot: int, target_kind: String, target_name:
 			buffs["frost_armor_until"] = now + int(dur * 1000.0)
 			_buffs[sender] = buffs
 			rpc("fx_buff", sender, dur)
+		"breath":
+			# Souffle du dragon : torrent en cône devant le lanceur, dégâts
+			# par ticks. Le lanceur étant enraciné pendant le rugissement, sa
+			# rotation répliquée est stable → on recalcule le cône à chaque tick.
+			var b_dur: float = int(spell["ticks"]) * float(spell["tick_interval"]) + 0.25
+			rpc("fx_breath", sender, element, b_dur)
+			var b_dmg := int(spell["damage"])
+			var b_rng := float(spell["range"])
+			var b_half := deg_to_rad(float(spell.get("cone_angle", 30.0)) * 0.5)
+			var b_extra := {
+				"slow": float(spell.get("slow", 0.0)),
+				"slow_duration": float(spell.get("slow_duration", 0.0)),
+			}
+			for i in range(int(spell["ticks"])):
+				var when := float(i + 1) * float(spell["tick_interval"])
+				get_tree().create_timer(when).timeout.connect(func():
+					if is_inside_tree() and multiplayer.is_server():
+						_breath_tick(sender, element, b_dmg, b_rng, b_half, b_extra)
+				)
 		"strike":
 			# Frappe au sol télégraphiée : la zone est marquée sur la position
 			# ACTUELLE de la cible — elle a `delay` secondes pour l'esquiver.
@@ -346,6 +365,30 @@ func server_spawn_bolt(from: Vector3, element: String, damage: int, target_kind:
 		"target_name": target_name,
 		"extra": extra,
 	})
+
+# Un tick du souffle : touche tout ennemi dans le cône frontal du lanceur.
+func _breath_tick(sender: int, element: String, dmg: int, rng: float, half: float, extra: Dictionary) -> void:
+	var caster := players_node.get_node_or_null(str(sender))
+	if caster == null:
+		return
+	var fwd: Vector3 = -caster.global_transform.basis.z
+	fwd.y = 0
+	if fwd.length() < 0.01:
+		return
+	fwd = fwd.normalized()
+	var origin: Vector3 = caster.global_position
+	var cos_half := cos(half)
+	var targets: Array = get_tree().get_nodes_in_group("players") + get_tree().get_nodes_in_group("boss")
+	for t in targets:
+		if t == caster:
+			continue
+		var to: Vector3 = t.global_position - origin
+		to.y = 0
+		var d := to.length()
+		if d > rng or d < 0.1:
+			continue
+		if fwd.dot(to.normalized()) >= cos_half:
+			server_handle_hit(t, dmg, element, sender, extra)
 
 # Point d'entrée unique des dégâts — projectiles, novas, mêlée du boss
 func server_handle_hit(target: Node3D, base_damage: int, element: String, shooter: int, extra := {}) -> void:
@@ -550,6 +593,15 @@ func fx_melee(id: int, step: int) -> void:
 	if node:
 		node.play_melee_anim(step)
 
+# Diffuse le souffle du dragon. Le lanceur l'affiche déjà localement (pas de
+# latence) → on saute son propre pair, comme pour la mêlée/l'incantation.
+@rpc("authority", "call_local", "reliable")
+func fx_breath(id: int, element: String, duration: float) -> void:
+	var node := players_node.get_node_or_null(str(id))
+	if node == null or node.is_multiplayer_authority():
+		return
+	node.show_breath_vfx(element, duration)
+
 # Relais d'état d'incantation : sans lui, les autres joueurs voient un mage
 # immobile en Idle pendant 2s puis un projectile sorti de nulle part — le
 # télégraphe PvP le plus important du jeu serait invisible.
@@ -658,8 +710,8 @@ func _build_hud() -> void:
 	spell_bar.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	spell_bar.offset_top = -100.0
 	spell_bar.offset_bottom = -28.0
-	spell_bar.offset_left = -340.0
-	spell_bar.offset_right = 340.0
+	spell_bar.offset_left = -400.0
+	spell_bar.offset_right = 400.0
 	spell_bar.alignment = BoxContainer.ALIGNMENT_CENTER
 	spell_bar.add_theme_constant_override("separation", 10)
 	hud.add_child(spell_bar)
@@ -690,7 +742,8 @@ func _rebuild_spell_bar() -> void:
 		var base := "[%d] %s %s" % [i + 1, spell["icon"], spell["name"]]
 		var b := Button.new()
 		b.text = base
-		b.custom_minimum_size = Vector2(150, 58)
+		b.custom_minimum_size = Vector2(150, 54)
+		b.add_theme_font_size_override("font_size", 12)
 		b.focus_mode = Control.FOCUS_NONE
 		var slot := i
 		b.pressed.connect(func():

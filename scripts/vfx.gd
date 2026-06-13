@@ -83,6 +83,54 @@ func make_trail(color: Color) -> GPUParticles3D:
 	p.emitting = true
 	return p
 
+# Souffle du dragon : torrent de flammes en cône vers l'avant (-Z local).
+# À attacher au lanceur (hauteur de la bouche). S'auto-détruit après `duration`.
+func make_dragon_breath(color: Color, duration: float) -> Node3D:
+	var root := Node3D.new()
+
+	# Torrent de particules projeté loin devant (jaillit, n'enveloppe pas)
+	var p := _particles(color, 0.34, 240, 0.5)
+	p.local_coords = false  # les flammes restent dans le monde → vrai torrent
+	p.position = Vector3(0, 0, -0.5)  # émis devant la bouche
+	var mat := p.process_material as ParticleProcessMaterial
+	mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	mat.emission_box_extents = Vector3(0.1, 0.1, 0.05)
+	mat.direction = Vector3(0, 0.04, -1)
+	mat.spread = 15.0
+	mat.gravity = Vector3(0, 0.4, 0)
+	mat.initial_velocity_min = 19.0
+	mat.initial_velocity_max = 27.0
+	mat.scale_min = 0.9
+	mat.scale_max = 2.3
+	_add_size_fade(mat)
+	p.emitting = true
+	root.add_child(p)
+
+	# Noyau du jet : cône qui S'ÉLARGIT en s'éloignant (étroit à la bouche)
+	var cone := CylinderMesh.new()
+	cone.top_radius = 1.5      # large au loin
+	cone.bottom_radius = 0.12  # étroit à la bouche
+	cone.height = 6.0
+	var core := MeshInstance3D.new()
+	core.mesh = cone
+	core.material_override = orb_material(color, 1.2)
+	# axe Y du cylindre → -Z (avant), large en -Z grâce à top_radius
+	core.rotation_degrees = Vector3(-90, 0, 0)
+	core.position = Vector3(0, 0, -3.0)
+	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(core)
+
+	# Étincelle d'allumage à la bouche + lumière vive qui scintille
+	root.add_child(make_orb(color, 0.18))
+	var light := OmniLight3D.new()
+	light.light_color = color
+	light.omni_range = 9.0
+	light.light_energy = 3.5
+	light.position = Vector3(0, 0, -2.0)
+	root.add_child(light)
+
+	return root
+
 # Lueur de canalisation entre les mains (à libérer à la fin de l'incantation).
 func make_cast_glow(color: Color) -> Node3D:
 	var root := Node3D.new()
@@ -250,9 +298,9 @@ func _particles(color: Color, particle_size: float, amount: int, lifetime: float
 	mesh_mat.emission_enabled = true
 	mesh_mat.emission = color
 	mesh_mat.emission_energy_multiplier = 2.0
-	mesh_mat.cast_shadow = false
 	mesh.material = mesh_mat
 	p.draw_pass_1 = mesh
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return p
 
 # Fait rétrécir + fondre les particules sur leur durée de vie.

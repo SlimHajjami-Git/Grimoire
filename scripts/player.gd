@@ -54,6 +54,7 @@ var _cast_started := 0.0
 var _cast_until := 0.0
 var _cds := {}            # spell_id -> fin de cooldown (secondes)
 var _gcd_until := 0.0
+var _breath_until := 0.0  # fin du rugissement (enraciné pendant ce temps)
 
 # État mêlée (combos)
 var _melee_step := 0
@@ -185,6 +186,20 @@ func _physics_process(delta: float) -> void:
 		return
 	_validate_target()
 
+	# Rugissement en cours : enraciné, face à la cible, on saute la logique
+	# normale de déplacement/incantation.
+	if _now() < _breath_until:
+		velocity.x = 0
+		velocity.z = 0
+		velocity.y = -0.5 if is_on_floor() else velocity.y - GRAVITY * delta
+		move_and_slide()
+		if _is_enemy(current_target):
+			_face_node_smooth(current_target, delta)
+		if model:
+			model.set_locomotion(0.0)
+		_update_target_ring()
+		return
+
 	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var cam_yaw: float = cam_rig.yaw if cam_rig else rotation.y
 	var dir := Vector3(input.x, 0, input.y).rotated(Vector3.UP, cam_yaw)
@@ -254,7 +269,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		if cam_rig:
 			cam_rig.handle_mouse(event.relative)
-	elif event.is_action_pressed("attack"):
+		return
+	# Pendant le rugissement, seules la caméra et le déverrouillage répondent
+	if _now() < _breath_until and not event.is_action_pressed("clear_target"):
+		return
+	if event.is_action_pressed("attack"):
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED  # re-capture au clic
 		else:
@@ -274,6 +293,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_try_cast_spell(2)
 	elif event.is_action_pressed("spell_4"):
 		_try_cast_spell(3)
+	elif event.is_action_pressed("spell_5"):
+		_try_cast_spell(4)
 	elif event.is_action_pressed("dash"):
 		_try_dash()
 	elif event.is_action_pressed("switch_element"):
@@ -358,7 +379,7 @@ func _update_target_ring() -> void:
 
 func _try_melee() -> void:
 	var now := _now()
-	if _casting:
+	if _casting or now < _breath_until:
 		return
 	if now < _melee_until:
 		_melee_queued = true  # buffer : le combo s'enchaînera à la fin du coup
@@ -400,6 +421,8 @@ func play_melee_anim(step: int) -> void:
 # ------------------------------------------------------------------ SORTS
 
 func _try_cast_spell(slot: int) -> void:
+	if _now() < _breath_until:
+		return
 	var spells: Array = SpellData.get_spells(sync_element)
 	if slot < 0 or slot >= spells.size():
 		return
@@ -456,11 +479,35 @@ func _complete_cast() -> void:
 	if model:
 		model.set_casting(false)
 	_set_cast_glow(false)
-	var sent := _send_cast(_cast_slot, _cast_spell, _cast_target)
-	if sent and model:
+	var spell := _cast_spell
+	var sent := _send_cast(_cast_slot, spell, _cast_target)
+	var is_breath: bool = sent and spell.get("kind", "") == "breath"
+	if sent and not is_breath and model:
 		model.play_cast_shoot()
-	_notify_cast_state(false, sent)
+	if is_breath:
+		_start_breath(spell)
+	# Pour le souffle, le geste de tir est remplacé par l'anim de rugissement
+	_notify_cast_state(false, sent and not is_breath)
 	_cast_target = null
+
+# Déclenche le rugissement : enracine le lanceur et joue le torrent localement.
+func _start_breath(spell: Dictionary) -> void:
+	var duration := float(int(spell["ticks"]) * float(spell["tick_interval"])) + 0.25
+	_breath_until = _now() + duration
+	if model:
+		model.play_breath(duration)
+	show_breath_vfx(sync_element, duration)
+
+# Attache le VFX de torrent à la bouche du lanceur (appelé localement par le
+# lanceur ET via fx_breath sur les autres pairs).
+func show_breath_vfx(element: String, duration: float) -> void:
+	var fx := Vfx.make_dragon_breath(ElementData.get_color(element), duration)
+	fx.position = Vector3(0, 1.5, -0.45)
+	add_child(fx)
+	get_tree().create_timer(duration).timeout.connect(func():
+		if is_instance_valid(fx):
+			fx.queue_free()
+	)
 
 func _cancel_cast(msg: String) -> void:
 	_casting = false
@@ -528,6 +575,8 @@ func _send_cast(slot: int, spell: Dictionary, snapshot_target: Node3D = null) ->
 	return true
 
 func _switch_element() -> void:
+	if _now() < _breath_until:
+		return
 	if unlocked.size() <= 1:
 		return
 	if _casting:
@@ -540,6 +589,7 @@ func on_respawned() -> void:
 	_casting = false
 	_cast_target = null
 	_slow_until = 0.0
+	_breath_until = 0.0
 	if model:
 		model.set_casting(false)
 	_set_cast_glow(false)
@@ -615,7 +665,7 @@ func gcd_remaining() -> float:
 
 func _try_dash() -> void:
 	var now := _now()
-	if now < _dash_cd_until:
+	if now < _dash_cd_until or now < _breath_until:
 		return
 	if _casting:
 		_cancel_cast("Sort interrompu !")
@@ -713,6 +763,16 @@ func _run_phototest() -> void:
 	# 9 : l'impact du météore (après le délai de télégraphe)
 	await get_tree().create_timer(0.6).timeout
 	await _snap("photo_9_impact")
+	# 10 : RUGISSEMENT DU DRAGON sur le boss (vue de dos, façon Fairy Tail)
+	global_position = Vector3(31, 0.2, 32)
+	await get_tree().create_timer(0.4).timeout
+	if not _target_is_enemy():
+		_toggle_lock()
+	_try_cast_spell(4)  # dragon_roar : windup 0.7s puis souffle
+	await get_tree().create_timer(0.95).timeout  # le souffle vient de partir
+	await _snap("photo_10_rugissement_a")
+	await get_tree().create_timer(0.45).timeout
+	await _snap("photo_10_rugissement_b")
 	get_tree().quit()
 
 func _snap(file_name: String) -> void:
@@ -731,12 +791,14 @@ func _autotest_tick() -> void:
 		return
 	if not _target_is_enemy():
 		_toggle_lock()
-	match _autotest_count % 5:
+	match _autotest_count % 6:
 		0:
 			_try_cast_spell(2)  # nova
 		1:
 			_try_cast_spell(0)  # trait ciblé
 		2:
 			_try_cast_spell(3)  # frappe télégraphiée (strike)
+		3:
+			_try_cast_spell(4)  # rugissement du dragon (breath)
 		_:
 			_try_melee()        # combos d'épée

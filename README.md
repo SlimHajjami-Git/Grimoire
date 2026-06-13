@@ -25,7 +25,7 @@ le modèle serveur de **Rust** (un monde = un serveur, pas un MMO mondial).
 | Souris | Caméra 3ᵉ personne, vue de dos (orbite libre) |
 | **Clic gauche** | **Coup d'épée — re-cliquer enchaîne les combos (1→2→3)** |
 | Tab / clic-molette | **Lock-on** : verrouille la cible (re-Tab : cible suivante) |
-| 1 / 2 / 3 / 4 | Sorts de la magie active (sur la cible verrouillée) |
+| 1 / 2 / 3 / 4 / 5 | Sorts de la magie active (sur la cible verrouillée) |
 | R | Changer de magie (parmi celles débloquées) |
 | Espace | Dash |
 | Échap | Déverrouille la cible, puis libère la souris |
@@ -62,6 +62,7 @@ l'interrompt** (la mêlée, elle, reste mobile).
 | 2 | Boule de feu | 30 dégâts, incantation 1.8s, CD 6s |
 | 3 | Nova ardente | 16 dégâts AoE 8m autour de soi, CD 10s |
 | 4 | Météore | 35 dégâts AoE 4m **télégraphiés** au sol (0.9s → esquivable au dash), CD 12s |
+| 5 | 🐉 Rugissement du Dragon | Souffle façon Fairy Tail : inspiration (0.7s) puis **torrent en cône** de 6 ticks (~66 dégâts) sur 15m. Lanceur enraciné. CD 16s |
 
 **❄ GLACE** (débloquée en tuant le Gardien de Givre)
 | Touche | Sort | Effet |

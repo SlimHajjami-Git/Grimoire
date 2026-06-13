@@ -7,9 +7,13 @@ extends Node
 #   "self_buff" → buff sur soi-même (pas de cible requise)
 #   "strike"    → frappe au sol TÉLÉGRAPHIÉE sur la position de la cible :
 #                 zone marquée pendant `delay` secondes → ESQUIVABLE au dash
+#   "breath"    → SOUFFLE : torrent en cône devant le lanceur (façon Fairy
+#                 Tail). Inspiration (cast_time) puis rugissement : le lanceur
+#                 est enraciné et inflige des dégâts par ticks dans un cône.
 # Champs optionnels : slow / slow_duration (ralentissement appliqué à l'impact),
 #                     buff / buff_duration (pour self_buff),
-#                     radius / delay (pour strike)
+#                     radius / delay (pour strike),
+#                     cone_angle / ticks / tick_interval (pour breath)
 
 const SPELLS := {
 	"fire": [
@@ -22,6 +26,10 @@ const SPELLS := {
 		{ "id": "meteor", "name": "Météore", "icon": "🌠",
 			"damage": 35, "cast_time": 0.0, "cooldown": 12.0, "range": 30.0, "kind": "strike",
 			"radius": 4.0, "delay": 0.9 },
+		{ "id": "dragon_roar", "name": "Rugissement du Dragon", "icon": "🐉",
+			"damage": 11, "cast_time": 0.7, "cooldown": 16.0, "range": 15.0, "kind": "breath",
+			"cone_angle": 30.0, "ticks": 6, "tick_interval": 0.18,
+			"slow": 0.3, "slow_duration": 0.5 },
 	],
 	"ice": [
 		{ "id": "frost_shard", "name": "Éclat de givre", "icon": "❄",
