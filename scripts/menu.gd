@@ -22,6 +22,9 @@ func _ready() -> void:
 				return
 			get_tree().change_scene_to_file.call_deferred("res://scenes/world.tscn")
 			return
+		if a == "--vfxshow":
+			get_tree().change_scene_to_file.call_deferred("res://scenes/vfxshow.tscn")
+			return
 		if a == "--phototest":
 			# Mode dev : héberge en solo, le joueur fait des captures d'écran
 			Net.host("PhotoBot")

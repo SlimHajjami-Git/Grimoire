@@ -17,6 +17,8 @@ var target_name := ""
 
 var _target: Node3D = null
 var _age := 0.0
+var _light: OmniLight3D = null
+var _light_base := 1.8
 
 func setup(data: Dictionary) -> void:
 	position = data["pos"]
@@ -44,37 +46,37 @@ func _ready() -> void:
 
 func _build_visuals() -> void:
 	var c: Color = ElementData.get_color(element)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = c
-	mat.emission_enabled = true
-	mat.emission = c
-	mat.emission_energy_multiplier = 3.5
 
-	# Forme par élément : pic de cristal pour la glace, orbe pour le reste
-	var mesh := MeshInstance3D.new()
+	# Noyau d'énergie animé (shader). Pour la glace, on garde en plus un pic
+	# de cristal solide qui pointe dans le sens du vol.
+	add_child(Vfx.make_orb(c, 0.26))
 	if element == "ice":
 		var spike := CylinderMesh.new()
 		spike.top_radius = 0.0
-		spike.bottom_radius = 0.14
+		spike.bottom_radius = 0.13
 		spike.height = 0.7
-		mesh.mesh = spike
-		mesh.rotation_degrees = Vector3(-90, 0, 0)  # pointe vers -Z (sens du vol)
-	else:
-		var sph := SphereMesh.new()
-		sph.radius = 0.22
-		sph.height = 0.44
-		mesh.mesh = sph
-	mesh.material_override = mat
-	add_child(mesh)
+		var crystal_mat := StandardMaterial3D.new()
+		crystal_mat.albedo_color = c.lerp(Color(1, 1, 1), 0.5)
+		crystal_mat.metallic = 0.4
+		crystal_mat.roughness = 0.15
+		crystal_mat.emission_enabled = true
+		crystal_mat.emission = c
+		crystal_mat.emission_energy_multiplier = 1.2
+		var spike_mesh := MeshInstance3D.new()
+		spike_mesh.mesh = spike
+		spike_mesh.material_override = crystal_mat
+		spike_mesh.rotation_degrees = Vector3(-90, 0, 0)  # pointe vers -Z
+		spike_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(spike_mesh)
 
-	# Traînée de particules
+	# Traînée de braises
 	add_child(Vfx.make_trail(c))
 
-	var light := OmniLight3D.new()
-	light.light_color = c
-	light.omni_range = 5.0
-	light.light_energy = 1.6
-	add_child(light)
+	_light = OmniLight3D.new()
+	_light.light_color = c
+	_light.omni_range = 5.0
+	_light.light_energy = _light_base
+	add_child(_light)
 
 func _physics_process(delta: float) -> void:
 	if _target != null and is_instance_valid(_target):
@@ -92,6 +94,9 @@ func _physics_process(delta: float) -> void:
 	var flat_dir := Vector3(dir.x, 0, dir.z)
 	if flat_dir.length() > 0.1:
 		look_at(global_position + dir, Vector3.UP)
+	# Scintillement de la lumière (la flamme vacille)
+	if _light:
+		_light.light_energy = _light_base + sin(_age * 38.0) * 0.5
 	_age += delta
 	# Seul le serveur détruit : le despawn est répliqué par le spawner
 	if _age > LIFETIME and multiplayer.is_server():

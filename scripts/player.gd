@@ -701,13 +701,18 @@ func _run_phototest() -> void:
 	await get_tree().create_timer(1.0).timeout
 	print("[PHOTO] anim canalisation : ", model.debug_anim())
 	await _snap("photo_6_canalisation")
-	# 7 : projectile en vol avec sa traînée (juste après la fin du cast)
-	await get_tree().create_timer(1.1).timeout
+	# 7 : projectile en vol de PRÈS, juste après le départ (fin du cast à ~1.8s)
+	await get_tree().create_timer(0.95).timeout
+	await get_tree().create_timer(0.18).timeout
 	await _snap("photo_7_projectile")
-	# 8 : télégraphe du Météore au sol
+	# 8 : impact + télégraphe du Météore au sol
+	await get_tree().create_timer(0.6).timeout
 	_try_cast_spell(3)
 	await get_tree().create_timer(0.5).timeout
 	await _snap("photo_8_telegraphe")
+	# 9 : l'impact du météore (après le délai de télégraphe)
+	await get_tree().create_timer(0.6).timeout
+	await _snap("photo_9_impact")
 	get_tree().quit()
 
 func _snap(file_name: String) -> void:

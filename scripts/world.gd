@@ -540,6 +540,7 @@ func fx_strike_telegraph(pos: Vector3, radius: float, element: String, delay: fl
 @rpc("authority", "call_local", "reliable")
 func fx_strike_burst(pos: Vector3, radius: float, element: String) -> void:
 	Vfx.impact_burst(self, pos + Vector3.UP * 0.5, ElementData.get_color(element), 2.5)
+	Vfx.scorch_mark(self, pos, radius)
 	fx_nova(pos, element, radius)
 
 # Diffuse l'animation d'un coup d'épée à tous les pairs
